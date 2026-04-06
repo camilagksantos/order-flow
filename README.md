@@ -159,21 +159,9 @@ order-flow/
 
 ---
 
-## Roadmap
+## Author
 
-- [x] Project structure and architecture planning
-- [ ] Database migrations (Flyway)
-- [ ] Domain model implementation
-- [ ] REST API (Products, Customers, Cart, Orders)
-- [ ] RabbitMQ integration and event consumers
-- [ ] Excel reports (Apache POI)
-- [ ] Angular frontend — product listing and cart
-- [ ] Angular frontend — checkout flow
-- [ ] Test coverage (backend 80%+, frontend 70%+)
-- [ ] Docker Compose setup
+Made by **Camila Kfouri**
 
----
-
-## License
-
-MIT
+[![GitHub](https://img.shields.io/badge/GitHub-camilagksantos-181717?style=flat&logo=github)](https://github.com/camilagksantos)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-camila--kfouri-0A66C2?style=flat&logo=linkedin)](https://www.linkedin.com/in/camila-kfouri/)
