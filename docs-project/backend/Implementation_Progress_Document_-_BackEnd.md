@@ -2,10 +2,10 @@
 
 ## 1. Implemented Areas
 
-- [ ] pom.xml dependencies (ModelMapper, Apache POI)
-- [ ] Package structure (hexagonal)
-- [ ] Application profiles configuration
-- [ ] Database migrations (Flyway)
+- [x] pom.xml dependencies (ModelMapper, Apache POI)
+- [x] Package structure (hexagonal)
+- [x] Application profiles configuration
+- [x] Database migrations (Flyway)
 - [ ] Domain exceptions
 - [ ] Domain models
 - [ ] JPA entities
