@@ -1,3 +1,171 @@
+# order-flow
+
+> E-commerce REST API with hexagonal architecture, event-driven order processing via RabbitMQ, and async workflows.
+
+---
+
+## 🧠 Features
+
+- Hexagonal Architecture (Ports & Adapters) with strict domain isolation
+- Event-driven order processing via RabbitMQ
+- Transactional Outbox Pattern — guaranteed event delivery
+- Idempotency — duplicate messages are safely ignored
+- Order state machine: PENDING → PAID → PREPARING → SHIPPED → DELIVERED
+- Stock reservation and release via async consumers
+- Price snapshots on cart and order items
+- Dead Letter Queue for failed message handling
+- Excel sales reports with Apache POI
+- Email notifications via MailHog (dev)
+- Full test suite — unit, integration and E2E
+- Swagger / OpenAPI documentation
+
+---
+
+## 🏗 Architecture Overview
+
+The system follows Hexagonal Architecture, where the domain is completely
+isolated from frameworks and external systems.
+┌─────────────────────────┐
+│        REST API         │
+│     (Controllers)       │
+└─────────────┬───────────┘
+│
+▼
+Application Layer
+(Use Cases / Services)
+│
+▼
+Domain (Core Business)
+Aggregates + Events + Ports
+│
+▼
+┌─────────────────────────┐
+│      Outbound Ports     │
+│  Repositories / Events  │
+└─────────────┬───────────┘
+│
+┌─────────────────────┴─────────────────────┐
+│                                           │
+▼                                           ▼
+Persistence Adapter                    Messaging Adapter
+(MySQL / JPA)                    (RabbitMQ / MailHog)
+
+### Order State Machine
+PENDING → PAID → PREPARING → SHIPPED → DELIVERED
+↓         ↓         ↓
+CANCELLED  REFUNDED  CANCELLED
+
+### Event-Driven Flow
+POST /checkout
+└── creates Order (PENDING)
+└── persists OutboxEvent
+└── Scheduler publishes to RabbitMQ
+├── StockConsumer    → reserves stock
+├── EmailConsumer    → sends confirmation
+└── StatusConsumer   → updates order status
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Java 26
+- Maven
+- Docker and Docker Compose
+- Node.js 20+
+
+### Clone the Repository
+
+```bash
+git clone https://github.com/camilagksantos/order-flow.git
+cd order-flow
+```
+
+---
+
+## ▶️ Running locally
+
+```bash
+# Start infrastructure (MySQL, RabbitMQ, MailHog)
+docker compose up -d
+
+# Run the backend
+cd backend
+./mvnw spring-boot:run
+
+# Run the frontend
+cd frontend
+npm install
+ng serve
+```
+
+### Access points
+
+| Service | URL |
+|---|---|
+| Frontend | http://localhost:4200 |
+| API | http://localhost:8080 |
+| Swagger UI | http://localhost:8080/swagger-ui.html |
+| RabbitMQ Management | http://localhost:15672 |
+| MailHog (email preview) | http://localhost:8025 |
+
+---
+
+## 🧪 Tests
+
+```bash
+cd backend
+./mvnw test
+```
+
+| Layer | Description |
+|---|---|
+| Unit | Domain services, use cases, mappers |
+| Integration | Persistence adapters, RabbitMQ consumers |
+| E2E | Full flow: Controller → Domain → Database |
+
+---
+
+## 📚 API Documentation
+
+Swagger UI is available when the application is running:
+
+http://localhost:8080/swagger-ui.html
+
+Main resource groups:
+- `POST /api/v1/carts/{id}/checkout` — initiates async order processing
+- `GET /api/v1/orders/{id}` — order details and current status
+- `GET /api/v1/reports/sales?startDate=&endDate=&format=xlsx` — Excel sales report
+
+---
+
+## 📁 Project Structure
+order-flow/
+├── backend/
+│   └── src/main/java/com/camilagksantos/orderflow/
+│       ├── domain/
+│       │   ├── model/       ← aggregates, value objects
+│       │   ├── event/       ← domain events
+│       │   ├── exception/   ← domain exceptions
+│       │   └── port/
+│       │       ├── in/      ← use case interfaces
+│       │       └── out/     ← repository and event interfaces
+│       ├── application/
+│       │   ├── service/     ← use case implementations
+│       │   ├── dto/         ← request / response models
+│       │   └── mapper/      ← domain ↔ dto mappers
+│       └── infrastructure/
+│           ├── adapter/
+│           │   ├── in/      ← REST controllers, RabbitMQ consumers
+│           │   └── out/     ← JPA adapters, event publisher, email
+│           ├── persistence/ ← JPA entities, Spring Data repositories
+│           └── config/      ← Spring beans, RabbitMQ, OpenAPI
+├── frontend/                ← Angular application
+├── docs-project/            ← Architecture decisions and diagrams
+├── docker-compose.yml
+└── README.md
+
 ---
 
 ## 🛢 Database Migrations
