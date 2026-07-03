@@ -20,24 +20,19 @@ and web controllers communicate with the domain exclusively through ports.
 - Product
 - Customer
 - Cart
-- Order
+- ShopOrder
 - Payment
 
 ### Value Objects
-- Money (amount + currency)
-- Email (validated)
-- CPF (validated with check digit)
-- Dimensions (width, height, depth)
-- CustomerSnapshot (name, email, cpf, phone)
-- PaymentDetails (card, pix or boleto data)
+- Money (amount + currency, default EUR)
+- Email (validated, lowercase)
+- NIF (validated with check digit, Portuguese tax number)
 
 ### Supporting Entities
 - Category
-- ProductImage
 - Address
 - CartItem
 - OrderItem
-- StockMovement
 - OutboxEvent
 
 ### Domain Events
@@ -46,18 +41,15 @@ and web controllers communicate with the domain exclusively through ports.
 - OrderCancelledEvent
 - OrderShippedEvent
 - OrderStatusChangedEvent
-- StockReservedEvent
-- StockReservationFailedEvent
 
 ## 3. Order State Machine
 
 Allowed transitions:
 
 - PENDING → PAID, CANCELLED
-- PAID → PREPARING, REFUNDED
+- PAID → PREPARING
 - PREPARING → SHIPPED, CANCELLED
 - SHIPPED → DELIVERED
-- DELIVERED → REFUNDED
 
 ## 4. Environment Profiles
 
@@ -79,8 +71,8 @@ A scheduler reads pending OutboxEvents and publishes them to RabbitMQ.
 Guarantees at-least-once delivery without distributed transactions.
 
 ### 5.3 Idempotency
-Order and Payment carry an idempotencyKey (UUID).
-Each consumer checks the processed_events table before handling a message.
+ShopOrder carries an idempotencyKey (UUID).
+Each consumer checks the processed_event table before handling a message.
 Duplicate messages are safely ignored without side effects.
 
 ### 5.4 Price Snapshots
@@ -91,11 +83,10 @@ Price changes never affect historical cart or order records.
 ### 5.5 Stock Control
 Product has two fields: stockQuantity and reservedQuantity.
 availableQuantity = stockQuantity - reservedQuantity.
-Reservation happens asynchronously via StockConsumer after order creation.
-Release happens via StockReleaseConsumer on cancellation.
+Stock is updated synchronously on order creation and cancellation.
 
 ### 5.6 Dead Letter Queue
-Failed messages are routed to ecommerce.dlx exchange.
+Failed messages are routed to orderflow.dlx exchange.
 Allows inspection, diagnosis and replay without data loss.
 
 ### 5.7 Exception Handling
@@ -112,23 +103,31 @@ Exception mapping:
 - Allowed origin: http://localhost:4200
 - Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
 
+### 5.9 Portugal Localisation
+- Currency: EUR (default in Money value object)
+- Tax number: NIF (9 digits with check digit validation)
+- Address format: Portuguese district and postal code (XXXX-XXX)
+- Country default: PT
+
+### 5.10 Customer Data Immutability
+Name, email and NIF cannot be changed after registration.
+These fields are enforced as immutable at the domain level.
+Phone always reflects the current value.
+
 ## 6. RabbitMQ Configuration
 
 ### Exchanges
-- ecommerce.orders (topic)
-- ecommerce.stock (direct)
-- ecommerce.notifications (fanout)
-- ecommerce.dlx (dead letter)
+- orderflow.orders (topic)
+- orderflow.notifications (fanout)
+- orderflow.dlx (dead letter)
 
 ### Queues
 - order.created.queue
 - order.paid.queue
 - order.shipped.queue
 - order.cancelled.queue
-- stock.reserve.queue
-- stock.release.queue
 - email.notification.queue
-- ecommerce.dead-letter.queue
+- orderflow.dead-letter.queue
 
 ## 7. Technology Stack
 
@@ -139,6 +138,7 @@ Exception mapping:
 - Spring Data JPA
 - Spring AMQP (RabbitMQ)
 - Spring Security
+- Spring Mail
 - MySQL 8
 - Flyway
 - ModelMapper
@@ -163,10 +163,6 @@ Exception mapping:
 
 ## 9. Next Steps
 
-- Add ModelMapper and Apache POI to pom.xml
-- Create package structure (hexagonal)
-- Configure application profiles
-- Implement Flyway migrations
 - Implement domain models
 - Implement JPA entities
 - Implement ports (in and out)
