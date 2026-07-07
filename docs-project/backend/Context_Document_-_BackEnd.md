@@ -1,3 +1,105 @@
+# order-flow — Architecture Context Document
+
+## 1. Final Architecture Plan
+
+This project follows Hexagonal Architecture (Ports and Adapters) to ensure
+a clear separation between:
+
+- Domain logic
+- Application use cases
+- Infrastructure
+- External integrations
+
+The core business logic resides entirely within the domain layer and is
+independent of frameworks. External systems such as databases, message brokers,
+and web controllers communicate with the domain exclusively through ports.
+
+## 2. Domain Model
+
+### Aggregates
+- Product
+- Customer
+- Cart
+- ShopOrder
+- Payment
+
+### Value Objects
+- Money (amount + currency, default EUR)
+- Email (validated, lowercase enforced)
+- NIF (9 digits, check digit validated — Portuguese tax number)
+
+### Supporting Entities
+- Category (belongs to Product domain)
+- Address (belongs to Customer domain)
+- CartItem
+- OrderItem
+- OutboxEvent
+
+### Domain Events
+- OrderCreatedEvent
+- OrderPaidEvent
+- OrderCancelledEvent
+- OrderShippedEvent
+- OrderStatusChangedEvent
+
+### Domain Exceptions
+- DomainException (abstract base)
+- ResourceNotFoundException → HTTP 404
+- BusinessRuleException → HTTP 422
+- ProductNotFoundException
+- CustomerNotFoundException
+- CartNotFoundException
+- OrderNotFoundException
+- InsufficientStockException
+- InvalidOrderStatusTransitionException
+
+## 3. Order State Machine
+
+Allowed transitions:
+
+- PENDING → PAID, CANCELLED
+- PAID → PREPARING
+- PREPARING → SHIPPED, CANCELLED
+- SHIPPED → DELIVERED
+
+Transitions are validated inside the ShopOrder aggregate.
+Invalid transitions throw InvalidOrderStatusTransitionException.
+
+## 4. Package Structure
+orderflow/
+└── src/main/java/com/camilagksantos/orderflow/
+├── domain/
+│   ├── auth/            ← User, Role
+│   ├── cart/            ← Cart, CartItem, CartStatus
+│   ├── customer/        ← Customer, Address, CustomerStatus
+│   ├── event/           ← DomainEvent, domain events, OutboxEvent
+│   ├── exception/       ← domain exceptions
+│   ├── order/           ← ShopOrder, OrderItem, OrderStatus, PaymentMethod
+│   ├── payment/         ← Payment, PaymentStatus
+│   ├── product/         ← Product, Category, ProductStatus
+│   └── shared/          ← Money, Email, NIF
+├── application/
+│   ├── port/
+│   │   ├── input/       ← use case interfaces
+│   │   └── output/      ← repository and event interfaces
+│   ├── service/         ← use case implementations
+│   ├── dto/             ← request / response models
+│   └── mapper/          ← domain ↔ dto mappers
+└── infrastructure/
+├── adapter/
+│   ├── input/
+│   │   ├── web/     ← REST controllers
+│   │   └── messaging/ ← RabbitMQ consumers
+│   └── output/
+│       ├── persistence/ ← JPA adapters
+│       ├── messaging/   ← RabbitMQ publisher
+│       └── email/       ← MailHog adapter
+├── persistence/
+│   ├── entity/      ← JPA entities
+│   ├── repository/  ← Spring Data JPA interfaces
+│   └── mapper/      ← domain ↔ entity mappers
+└── config/          ← Spring beans, RabbitMQ, OpenAPI, Security
+
 ## 5. Environment Profiles
 
 ### dev
