@@ -9,7 +9,7 @@
 - [x] Value Objects (Money, Email, NIF)
 - [x] Domain models (aggregates and entities)
 - [x] Domain events (DomainEvent, OrderCreatedEvent, OrderPaidEvent, OrderCancelledEvent, OrderShippedEvent, OrderStatusChangedEvent)
-- [ ] Domain exceptions
+- [x] Domain exceptions
 - [ ] JPA entities
 - [ ] Input ports (use case interfaces)
 - [ ] Output ports (repository interfaces)
