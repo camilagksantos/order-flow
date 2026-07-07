@@ -7,7 +7,8 @@
 - [x] Application profiles configuration
 - [x] Database migrations (Flyway — V1 full schema)
 - [x] Value Objects (Money, Email, NIF)
-- [ ] Domain models (aggregates and entities)
+- [x] Domain models (aggregates and entities)
+- [x] Domain events (DomainEvent, OrderCreatedEvent, OrderPaidEvent, OrderCancelledEvent, OrderShippedEvent, OrderStatusChangedEvent)
 - [ ] Domain exceptions
 - [ ] JPA entities
 - [ ] Input ports (use case interfaces)

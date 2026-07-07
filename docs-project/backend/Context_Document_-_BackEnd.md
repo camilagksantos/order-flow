@@ -163,7 +163,7 @@ Phone always reflects the current value.
 
 ## 9. Next Steps
 
-- Implement domain models
+- Implement domain exceptions
 - Implement JPA entities
 - Implement ports (in and out)
 - Implement application services
