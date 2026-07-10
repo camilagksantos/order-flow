@@ -19,10 +19,6 @@ public record Money(
         return new Money(amount, DEFAULT_CURRENCY);
     }
 
-    public static Money of(String amount) {
-        return new Money(new BigDecimal(amount), DEFAULT_CURRENCY);
-    }
-
     public static Money zero() {
         return new Money(BigDecimal.ZERO, DEFAULT_CURRENCY);
     }

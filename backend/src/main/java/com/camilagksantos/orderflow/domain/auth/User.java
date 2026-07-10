@@ -1,29 +1,35 @@
 package com.camilagksantos.orderflow.domain.auth;
 
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 import java.util.List;
 
-public record User(
-        Long id,
-        String email,
-        String password,
-        boolean active,
-        List<Role> roles
-) {
-    public User {
-        if (email == null || email.isBlank()) throw new IllegalArgumentException("Email must not be blank");
-        if (password == null || password.isBlank()) throw new IllegalArgumentException("Password must not be blank");
-        roles = roles == null ? List.of() : List.copyOf(roles);
-    }
+@Getter
+@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class User {
+
+    private Long id;
+    private String email;
+    private String password;
+    private boolean active;
+    private List<Role> roles;
 
     public boolean hasRole(String roleName) {
-        return roles.stream().anyMatch(role -> role.name().equals(roleName));
+        return roles.stream().anyMatch(role -> role.getName().equals(roleName));
     }
 
-    public User deactivate() {
-        return new User(id, email, password, false, roles);
+    public void deactivate() {
+        this.active = false;
     }
 
-    public User activate() {
-        return new User(id, email, password, true, roles);
+    public void activate() {
+        this.active = true;
     }
 }

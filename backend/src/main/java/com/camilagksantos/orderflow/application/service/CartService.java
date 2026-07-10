@@ -20,13 +20,15 @@ public class CartService implements AddToCartUseCase, RemoveFromCartUseCase, Fin
     public Cart addToCart(Long customerId, CartItem item) {
         Cart cart = cartRepositoryPort.findActiveByCustomerId(customerId)
                 .orElseGet(() -> cartRepositoryPort.save(Cart.newCart(customerId)));
-        return cartRepositoryPort.save(cart.addItem(item));
+        cart.addItem(item);
+        return cartRepositoryPort.save(cart);
     }
 
     @Override
     public Cart removeFromCart(Long customerId, String itemId) {
         Cart cart = findCartByCustomerId(customerId);
-        return cartRepositoryPort.save(cart.removeItem(itemId));
+        cart.removeItem(itemId);
+        return cartRepositoryPort.save(cart);
     }
 
     @Override

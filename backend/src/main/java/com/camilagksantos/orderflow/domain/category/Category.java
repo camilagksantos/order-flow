@@ -1,9 +1,18 @@
 package com.camilagksantos.orderflow.domain.category;
 
-public record Category(
-        Long id, String name
-) {
-    public Category {
-        if (name == null || name.isBlank()) throw new IllegalArgumentException("Category name must not be blank");
-    }
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+@Getter
+@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class Category {
+
+    private Long id;
+    private String name;
 }

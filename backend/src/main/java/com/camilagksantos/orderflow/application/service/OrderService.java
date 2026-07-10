@@ -5,12 +5,12 @@ import com.camilagksantos.orderflow.application.port.input.CheckoutUseCase;
 import com.camilagksantos.orderflow.application.port.input.FindOrderUseCase;
 import com.camilagksantos.orderflow.application.port.input.UpdateOrderStatusUseCase;
 import com.camilagksantos.orderflow.application.port.output.CartRepositoryPort;
-import com.camilagksantos.orderflow.application.port.output.EventPublisherPort;
 import com.camilagksantos.orderflow.application.port.output.OrderRepositoryPort;
 import com.camilagksantos.orderflow.application.port.output.OutboxEventRepositoryPort;
 import com.camilagksantos.orderflow.domain.cart.Cart;
 import com.camilagksantos.orderflow.domain.event.OutboxEvent;
 import com.camilagksantos.orderflow.domain.event.OutboxEventStatus;
+import com.camilagksantos.orderflow.domain.exception.BusinessRuleException;
 import com.camilagksantos.orderflow.domain.exception.CartNotFoundException;
 import com.camilagksantos.orderflow.domain.exception.OrderNotFoundException;
 import com.camilagksantos.orderflow.domain.order.OrderStatus;
@@ -35,12 +35,14 @@ public class OrderService implements CheckoutUseCase, FindOrderUseCase, UpdateOr
     @Transactional
     public ShopOrder checkout(Long customerId, String idempotencyKey) {
         orderRepositoryPort.findByIdempotencyKey(idempotencyKey)
-                .ifPresent(order -> { throw new com.camilagksantos.orderflow.domain.exception.BusinessRuleException("Order already exists for idempotency key: " + idempotencyKey); });
+                .ifPresent(order -> {
+                    throw new BusinessRuleException("Order already exists for idempotency key: " + idempotencyKey);
+                });
 
         Cart cart = cartRepositoryPort.findActiveByCustomerId(customerId)
                 .orElseThrow(() -> new CartNotFoundException("Cart not found for customer: " + customerId));
 
-        if (cart.isEmpty()) throw new com.camilagksantos.orderflow.domain.exception.BusinessRuleException("Cart is empty");
+        if (cart.isEmpty()) throw new BusinessRuleException("Cart is empty");
 
         ShopOrder order = ShopOrder.fromCart(cart, idempotencyKey);
         ShopOrder savedOrder = orderRepositoryPort.save(order);
@@ -48,12 +50,13 @@ public class OrderService implements CheckoutUseCase, FindOrderUseCase, UpdateOr
         outboxEventRepositoryPort.save(new OutboxEvent(
                 UUID.randomUUID().toString(),
                 "ORDER_CREATED",
-                savedOrder.id(),
+                savedOrder.getId(),
                 OutboxEventStatus.PENDING,
                 LocalDateTime.now()
         ));
 
-        cartRepositoryPort.save(cart.convert());
+        cart.convert();
+        cartRepositoryPort.save(cart);
         return savedOrder;
     }
 
@@ -78,21 +81,21 @@ public class OrderService implements CheckoutUseCase, FindOrderUseCase, UpdateOr
     @Transactional
     public ShopOrder updateOrderStatus(String orderId, OrderStatus status) {
         ShopOrder order = findOrderById(orderId);
-        ShopOrder updated = switch (status) {
+        switch (status) {
             case PAID -> order.pay();
             case PREPARING -> order.startPreparing();
-            case SHIPPED -> order.ship(order.trackingCode());
+            case SHIPPED -> order.ship(order.getTrackingCode());
             case DELIVERED -> order.deliver();
-            default -> throw new com.camilagksantos.orderflow.domain.exception.BusinessRuleException("Invalid status transition to: " + status);
-        };
-        return orderRepositoryPort.save(updated);
+            default -> throw new BusinessRuleException("Invalid status transition to: " + status);
+        }
+        return orderRepositoryPort.save(order);
     }
 
     @Override
     @Transactional
     public ShopOrder cancelOrder(String orderId, String reason) {
         ShopOrder order = findOrderById(orderId);
-        ShopOrder cancelled = order.cancel(reason);
-        return orderRepositoryPort.save(cancelled);
+        order.cancel(reason);
+        return orderRepositoryPort.save(order);
     }
 }

@@ -2,64 +2,78 @@ package com.camilagksantos.orderflow.domain.order;
 
 import com.camilagksantos.orderflow.domain.cart.Cart;
 import com.camilagksantos.orderflow.domain.shared.Money;
+import com.camilagksantos.orderflow.domain.exception.InvalidOrderStatusTransitionException;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
-public record ShopOrder(
-        String id,
-        String orderNumber,
-        Long customerId,
-        OrderStatus status,
-        List<OrderItem> items,
-        Money subtotal,
-        Money shippingCost,
-        Money discountAmount,
-        Money totalAmount,
-        PaymentMethod paymentMethod,
-        String trackingCode,
-        String cancelReason,
-        String idempotencyKey,
-        LocalDateTime createdAt,
-        LocalDateTime updatedAt,
-        LocalDateTime paidAt,
-        LocalDateTime shippedAt,
-        LocalDateTime deliveredAt,
-        LocalDateTime cancelledAt
-) {
-    public ShopOrder {
-        if (customerId == null) throw new IllegalArgumentException("Customer ID must not be null");
-        if (orderNumber == null || orderNumber.isBlank()) throw new IllegalArgumentException("Order number must not be blank");
-        if (status == null) throw new IllegalArgumentException("Status must not be null");
-        if (paymentMethod == null) throw new IllegalArgumentException("Payment method must not be null");
-        if (idempotencyKey == null || idempotencyKey.isBlank()) throw new IllegalArgumentException("Idempotency key must not be blank");
-        items = items == null ? List.of() : List.copyOf(items);
-    }
+@Getter
+@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ShopOrder {
+    private String id;
+    private String orderNumber;
+    private Long customerId;
+    private OrderStatus status;
+    private List<OrderItem> items;
+    private Money subtotal;
+    private Money shippingCost;
+    private Money discountAmount;
+    private Money totalAmount;
+    private PaymentMethod paymentMethod;
+    private String trackingCode;
+    private String cancelReason;
+    private String idempotencyKey;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+    private LocalDateTime paidAt;
+    private LocalDateTime shippedAt;
+    private LocalDateTime deliveredAt;
+    private LocalDateTime cancelledAt;
 
-    public ShopOrder pay() {
+    public void pay() {
         validateTransition(OrderStatus.PAID);
-        return new ShopOrder(id, orderNumber, customerId, OrderStatus.PAID, items, subtotal, shippingCost, discountAmount, totalAmount, paymentMethod, trackingCode, cancelReason, idempotencyKey, createdAt, LocalDateTime.now(), LocalDateTime.now(), shippedAt, deliveredAt, cancelledAt);
+        this.status = OrderStatus.PAID;
+        this.paidAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
     }
 
-    public ShopOrder startPreparing() {
+    public void startPreparing() {
         validateTransition(OrderStatus.PREPARING);
-        return new ShopOrder(id, orderNumber, customerId, OrderStatus.PREPARING, items, subtotal, shippingCost, discountAmount, totalAmount, paymentMethod, trackingCode, cancelReason, idempotencyKey, createdAt, LocalDateTime.now(), paidAt, shippedAt, deliveredAt, cancelledAt);
+        this.status = OrderStatus.PREPARING;
+        this.updatedAt = LocalDateTime.now();
     }
 
-    public ShopOrder ship(String trackingCode) {
+    public void ship(String trackingCode) {
         validateTransition(OrderStatus.SHIPPED);
-        return new ShopOrder(id, orderNumber, customerId, OrderStatus.SHIPPED, items, subtotal, shippingCost, discountAmount, totalAmount, paymentMethod, trackingCode, cancelReason, idempotencyKey, createdAt, LocalDateTime.now(), paidAt, LocalDateTime.now(), deliveredAt, cancelledAt);
+        this.status = OrderStatus.SHIPPED;
+        this.trackingCode = trackingCode;
+        this.shippedAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
     }
 
-    public ShopOrder deliver() {
+    public void deliver() {
         validateTransition(OrderStatus.DELIVERED);
-        return new ShopOrder(id, orderNumber, customerId, OrderStatus.DELIVERED, items, subtotal, shippingCost, discountAmount, totalAmount, paymentMethod, trackingCode, cancelReason, idempotencyKey, createdAt, LocalDateTime.now(), paidAt, shippedAt, LocalDateTime.now(), cancelledAt);
+        this.status = OrderStatus.DELIVERED;
+        this.deliveredAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
     }
 
-    public ShopOrder cancel(String reason) {
+    public void cancel(String reason) {
         validateTransition(OrderStatus.CANCELLED);
-        return new ShopOrder(id, orderNumber, customerId, OrderStatus.CANCELLED, items, subtotal, shippingCost, discountAmount, totalAmount, paymentMethod, trackingCode, reason, idempotencyKey, createdAt, LocalDateTime.now(), paidAt, shippedAt, deliveredAt, LocalDateTime.now());
+        this.status = OrderStatus.CANCELLED;
+        this.cancelReason = reason;
+        this.cancelledAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
     }
 
     private void validateTransition(OrderStatus target) {
@@ -70,40 +84,36 @@ public record ShopOrder(
             case SHIPPED -> target == OrderStatus.DELIVERED;
             default -> false;
         };
-        if (!valid) throw new IllegalStateException("Cannot transition from " + status + " to " + target);
+        if (!valid) throw new InvalidOrderStatusTransitionException(status.name(), target.name());
     }
 
     public static ShopOrder fromCart(Cart cart, String idempotencyKey) {
-        return new ShopOrder(
-                UUID.randomUUID().toString(),
-                "ORD-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(),
-                cart.customerId(),
-                OrderStatus.PENDING,
-                cart.items().stream()
-                        .map(item -> new OrderItem(
-                                UUID.randomUUID().toString(),
-                                null,
-                                item.productId(),
-                                item.productName(),
-                                item.productSku(),
-                                item.unitPrice(),
-                                item.quantity()
-                        ))
-                        .toList(),
-                cart.total(),
-                Money.zero(),
-                Money.zero(),
-                cart.total(),
-                null,
-                null,
-                null,
-                idempotencyKey,
-                LocalDateTime.now(),
-                LocalDateTime.now(),
-                null,
-                null,
-                null,
-                null
-        );
+        List<OrderItem> orderItems = cart.getItems().stream()
+                .map(item -> OrderItem.builder()
+                        .id(UUID.randomUUID().toString())
+                        .productId(item.getProductId())
+                        .productName(item.getProductName())
+                        .productSku(item.getProductSku())
+                        .unitPrice(item.getUnitPrice())
+                        .quantity(item.getQuantity())
+                        .build())
+                .collect(Collectors.toList());
+
+        Money total = cart.total();
+
+        return ShopOrder.builder()
+                .id(UUID.randomUUID().toString())
+                .orderNumber("ORD-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
+                .customerId(cart.getCustomerId())
+                .status(OrderStatus.PENDING)
+                .items(orderItems)
+                .subtotal(total)
+                .shippingCost(Money.zero())
+                .discountAmount(Money.zero())
+                .totalAmount(total)
+                .idempotencyKey(idempotencyKey)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
     }
 }

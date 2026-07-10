@@ -1,24 +1,29 @@
 package com.camilagksantos.orderflow.domain.cart;
 
 import com.camilagksantos.orderflow.domain.shared.Money;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-public record Cart(
-        String id,
-        Long customerId,
-        CartStatus status,
-        List<CartItem> items,
-        LocalDateTime createdAt,
-        LocalDateTime updatedAt
-) {
-    public Cart {
-        if (customerId == null) throw new IllegalArgumentException("Customer ID must not be null");
-        if (status == null) throw new IllegalArgumentException("Status must not be null");
-        items = items == null ? List.of() : List.copyOf(items);
-    }
+@Getter
+@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class Cart {
+    private String id;
+    private Long customerId;
+    private CartStatus status;
+    private List<CartItem> items;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 
     public Money total() {
         return items.stream()
@@ -27,34 +32,35 @@ public record Cart(
     }
 
     public boolean isEmpty() {
-        return items.isEmpty();
+        return items == null || items.isEmpty();
     }
 
-    public Cart addItem(CartItem item) {
-        List<CartItem> updated = new java.util.ArrayList<>(items);
-        updated.add(item);
-        return new Cart(id, customerId, status, updated, createdAt, LocalDateTime.now());
+    public void addItem(CartItem item) {
+        if (this.items == null) this.items = new ArrayList<>();
+        this.items.add(item);
+        this.updatedAt = LocalDateTime.now();
     }
 
-    public Cart removeItem(String itemId) {
-        List<CartItem> updated = items.stream()
-                .filter(item -> !item.id().equals(itemId))
-                .toList();
-        return new Cart(id, customerId, status, updated, createdAt, LocalDateTime.now());
+    public void removeItem(String itemId) {
+        if (this.items != null) {
+            this.items.removeIf(item -> item.getId().equals(itemId));
+            this.updatedAt = LocalDateTime.now();
+        }
     }
 
-    public Cart convert() {
-        return new Cart(id, customerId, CartStatus.CONVERTED, items, createdAt, LocalDateTime.now());
+    public void convert() {
+        this.status = CartStatus.CONVERTED;
+        this.updatedAt = LocalDateTime.now();
     }
 
     public static Cart newCart(Long customerId) {
-        return new Cart(
-                UUID.randomUUID().toString(),
-                customerId,
-                CartStatus.ACTIVE,
-                List.of(),
-                LocalDateTime.now(),
-                LocalDateTime.now()
-        );
+        return Cart.builder()
+                .id(UUID.randomUUID().toString())
+                .customerId(customerId)
+                .status(CartStatus.ACTIVE)
+                .items(new ArrayList<>())
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
     }
 }

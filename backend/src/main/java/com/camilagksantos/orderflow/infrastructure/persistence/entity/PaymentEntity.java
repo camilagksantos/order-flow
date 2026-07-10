@@ -2,6 +2,7 @@ package com.camilagksantos.orderflow.infrastructure.persistence.entity;
 
 import com.camilagksantos.orderflow.domain.order.PaymentMethod;
 import com.camilagksantos.orderflow.domain.payment.PaymentStatus;
+import com.camilagksantos.orderflow.domain.shared.Money;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
