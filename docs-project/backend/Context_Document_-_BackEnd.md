@@ -137,19 +137,23 @@ Spring Boot, JPA, RabbitMQ and all external libraries are restricted
 to infrastructure and adapter layers.
 Domain models are plain Java records with no annotations.
 
-### 6.2 Domain Models as Records
+### 6.2 Domain Models as Lombok Classes
 
-All domain models are implemented as Java records.
+Domain models are implemented as regular Java classes with Lombok annotations
+(@Getter, @Setter, @Builder, @NoArgsConstructor, @AllArgsConstructor).
 
-Benefits:
+Reason for this choice:
+Java records exposed behaviour methods (reserve, ship, cancel, addItem) as
+mappable properties to MapStruct, generating unmapped property warnings and
+requiring excessive @Mapping(ignore = true) annotations for every method.
+Migrating to Lombok classes eliminated this complexity entirely.
 
-- Immutability by default
-- Thread safety
-- Value semantics
-- No boilerplate
+Domain models remain framework-free — no JPA, Spring or external annotations.
+Behaviour methods mutate the object state directly (void return) instead of
+returning new instances, following a more pragmatic and maintainable approach.
 
-Records cannot be used as JPA entities — a separate JPA entity class
-exists for each aggregate in the infrastructure layer.
+DTOs are implemented as Java records — immutable transfer objects with no
+behaviour are the ideal use case for records.
 
 ### 6.3 JPA Entity Mapping
 
@@ -174,8 +178,19 @@ Persistence Mappers (infrastructure/persistence/mapper/)
 - Entity ↔ Domain
 - Used by persistence adapters
 
-ModelMapper is used for straightforward mappings.
-Manual mapping is used where custom logic is required.
+MapStruct is used for all mappings — compile-time code generation, type-safe,
+no runtime reflection.
+
+Custom expressions are used for type-incompatible fields:
+
+- Money (domain) ↔ BigDecimal (entity) — Money.of(BigDecimal) / money.amount()
+- Email (domain) ↔ String (entity) — new Email(String) / email.value()
+- NIF (domain) ↔ String (entity) — new NIF(String) / nif.value()
+
+Ignored fields in toEntity() mappings:
+
+- createdAt, updatedAt — managed by @PrePersist / @PreUpdate
+- Relationship fields (customer, cart, order) — set manually in adapters when needed
 
 ### 6.5 Transactional Outbox Pattern
 

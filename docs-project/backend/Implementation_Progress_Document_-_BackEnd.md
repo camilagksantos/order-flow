@@ -11,6 +11,8 @@
 - Input and output ports
 - Application services
 - JPA repositories
+- Persistence mappers
+- Persistence adapters
 
 ## 2. Database Migrations
 
@@ -42,25 +44,33 @@ Key Decisions:
 
 ## 4. Domain Models
 
-All implemented as Java records — immutable and framework-independent.
+Domain models are implemented as Lombok classes (@Getter, @Setter, @Builder,
+@NoArgsConstructor, @AllArgsConstructor) — framework-free, no JPA annotations.
+
+Reason for migration from records:
+Records exposed behaviour methods as mappable properties to MapStruct, requiring
+excessive ignore annotations. Lombok classes eliminated this complexity entirely.
 
 Value Objects (domain/shared/):
 
 - Money — amount (BigDecimal) + currency (String, default EUR), with add/subtract/multiply operations
-- Email — validated by regex, lowercase enforced on construction
-- NIF — 9 digits, check digit validated using Portuguese algorithm
+- Email — validated by regex, lowercase enforced on construction (record)
+- NIF — 9 digits, check digit validated using Portuguese algorithm (record)
+
+Note: Money, Email and NIF remain as records — they are pure value objects
+with no behaviour methods that would conflict with MapStruct.
 
 Aggregates:
 
-- Product — with reserve/release/activate/deactivate behaviour
-- Customer — with block/activate behaviour
-- Cart — with addItem/removeItem/convert behaviour and newCart factory method
-- ShopOrder — with full state machine (pay/startPreparing/ship/deliver/cancel) and fromCart factory method
-- Payment — with approve/decline behaviour
+- Product — reserve/release/activate/deactivate (void mutations)
+- Customer — block/activate (void mutations)
+- Cart — addItem/removeItem/convert (void mutations) + newCart (static factory)
+- ShopOrder — pay/startPreparing/ship/deliver/cancel (void mutations) + fromCart (static factory)
+- Payment — approve/decline (void mutations)
 
 Supporting Entities:
 
-- Category (domain/product/)
+- Category (domain/category/)
 - Address (domain/customer/)
 - CartItem — stores price snapshot at time of addition
 - OrderItem — stores price snapshot at time of checkout
@@ -87,7 +97,7 @@ Domain Events (domain/event/):
 
 Auth Models (domain/auth/):
 
-- User — with activate/deactivate behaviour and hasRole check
+- User — activate/deactivate (void mutations), hasRole check
 - Role
 
 ## 5. Domain Exceptions
@@ -101,6 +111,8 @@ Hierarchy:
     - CartNotFoundException
     - OrderNotFoundException
   - BusinessRuleException → HTTP 422
+    - InsufficientStockException
+    - InvalidOrderStatusTransitionException
 
 ## 6. JPA Entities
 
@@ -126,7 +138,7 @@ Entities:
 - OutboxEventEntity → table: outbox_event
 - ProcessedEventEntity → table: processed_event
 
-Key Decision:
+Key Decisions:
 
 - CartEntity uses orphanRemoval = true — cart items do not exist outside a cart
 - ShopOrderEntity does NOT use orphanRemoval — order items are historical records
@@ -197,6 +209,7 @@ Key Decisions:
 - OrderService.checkout() is @Transactional — order creation and outbox event persist atomically
 - CartService.addToCart() creates a new cart if none exists for the customer
 - ShopOrder.fromCart() converts cart items to order items as price snapshots at checkout time
+- Domain behaviour methods are void — state is mutated directly, then saved via repository
 
 ## 10. JPA Repositories
 
@@ -217,27 +230,72 @@ Repositories:
 - OutboxEventJpaRepository — findByStatus
 - ProcessedEventJpaRepository — JpaRepository<ProcessedEventEntity, String>
 
-## 11. In Progress
+## 11. Persistence Mappers
 
-- Persistence adapters
-- Persistence mappers
-- Application mappers
-- DTOs
+Located in infrastructure/persistence/mapper/.
+MapStruct interfaces — implementation generated at compile time.
+
+Mappers:
+
+- RolePersistenceMapper — Role ↔ RoleEntity (direct field mapping)
+- UserPersistenceMapper — User ↔ UserEntity (uses RolePersistenceMapper)
+- CategoryPersistenceMapper — Category ↔ CategoryEntity (direct field mapping)
+- ProductPersistenceMapper — Product ↔ ProductEntity (Money expression, uses CategoryPersistenceMapper)
+- AddressPersistenceMapper — Address ↔ AddressEntity (customer.id → customerId)
+- CustomerPersistenceMapper — Customer ↔ CustomerEntity (Email/NIF expressions, uses AddressPersistenceMapper)
+- CartItemPersistenceMapper — CartItem ↔ CartItemEntity (Money expression, cart.id → cartId)
+- CartPersistenceMapper — Cart ↔ CartEntity (customer.id → customerId, uses CartItemPersistenceMapper)
+- OrderItemPersistenceMapper — OrderItem ↔ OrderItemEntity (Money expression, order.id → orderId)
+- ShopOrderPersistenceMapper — ShopOrder ↔ ShopOrderEntity (Money expressions, uses OrderItemPersistenceMapper)
+- PaymentPersistenceMapper — Payment ↔ PaymentEntity (Money expression, order.id → orderId)
+- OutboxEventPersistenceMapper — OutboxEvent ↔ OutboxEventEntity (direct mapping)
+
+Key Decisions:
+
+- createdAt and updatedAt ignored in toEntity() — managed by @PrePersist / @PreUpdate
+- Relationship fields (customer, cart, order) ignored in toEntity() — set by JPA cascade
+- Money ↔ BigDecimal conversion via expression: Money.of(BigDecimal) / money.amount()
+- Email ↔ String conversion via expression: new Email(String) / email.value()
+- NIF ↔ String conversion via expression: new NIF(String) / nif.value()
+
+## 12. Persistence Adapters
+
+Located in infrastructure/adapter/output/persistence/.
+Implement output ports using JPA repositories and persistence mappers.
+Annotated with @Component — Spring registers them as beans.
+
+Adapters:
+
+- CategoryJpaAdapter — implements CategoryRepositoryPort
+- ProductJpaAdapter — implements ProductRepositoryPort
+- CustomerJpaAdapter — implements CustomerRepositoryPort
+- CartJpaAdapter — implements CartRepositoryPort (uses CartStatus.ACTIVE for findActiveByCustomerId)
+- OrderJpaAdapter — implements OrderRepositoryPort
+- PaymentJpaAdapter — implements PaymentRepositoryPort
+- OutboxEventJpaAdapter — implements OutboxEventRepositoryPort
+- ProcessedEventJpaAdapter — implements ProcessedEventRepositoryPort
+
+## 13. In Progress
+
+- Application mappers (DTO ↔ Domain)
+- DTOs (request / response — Java records)
 - REST controllers
 - RabbitMQ configuration
 - Messaging consumers
 - Email adapter
 - Outbox event scheduler
 - Exception handling (@ControllerAdvice)
-- Security configuration
+- Security configuration (JWT)
 - OpenAPI configuration
-- Excel report generation
+- Excel report generation (Apache POI)
 - Unit tests
 - Integration tests
 
-## 12. Decisions Made During Implementation
+## 14. Decisions Made During Implementation
 
-- All domain models implemented as Java records (immutable, framework-free)
+- Domain models migrated from Java records to Lombok classes — records caused excessive MapStruct complexity due to behaviour methods being treated as mappable properties
+- DTOs will remain as Java records — immutable transfer objects with no behaviour
+- Value objects (Money, Email, NIF) remain as records — no behaviour methods that conflict with MapStruct
 - NIF replaces CPF — Portuguese tax number with 9-digit check digit validation
 - Address fields adapted for Portugal (district, postal_code, country default PT)
 - Cart never expires — conscious product decision
@@ -251,8 +309,9 @@ Repositories:
 - Port packages renamed from in/out to input/output — out is reserved by IntelliJ
 - OrderItem does not use orphanRemoval — historical records must be preserved
 - CartItem uses orphanRemoval — items do not exist outside their cart
-- ModelMapper replaced with MapStruct — compile-time mapping, type-safe, no runtime reflection
+- MapStruct replaced ModelMapper — compile-time mapping, type-safe, no runtime reflection
+- Category moved to domain/category/ — independent package, not nested under product
 
-## 13. Known Issues / Blockers
+## 15. Known Issues / Blockers
 
-- Spring cannot autowire output ports until persistence adapters are implemented — expected, not an error
+None.
