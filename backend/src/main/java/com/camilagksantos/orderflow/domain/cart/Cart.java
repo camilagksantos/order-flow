@@ -4,6 +4,7 @@ import com.camilagksantos.orderflow.domain.shared.Money;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 public record Cart(
         String id,
@@ -44,5 +45,16 @@ public record Cart(
 
     public Cart convert() {
         return new Cart(id, customerId, CartStatus.CONVERTED, items, createdAt, LocalDateTime.now());
+    }
+
+    public static Cart newCart(Long customerId) {
+        return new Cart(
+                UUID.randomUUID().toString(),
+                customerId,
+                CartStatus.ACTIVE,
+                List.of(),
+                LocalDateTime.now(),
+                LocalDateTime.now()
+        );
     }
 }

@@ -8,5 +8,5 @@ public interface FindOrderUseCase {
 
     ShopOrder findOrderById(String id);
     ShopOrder findOrderByNumber(String orderNumber);
-    List<ShopOrder> findOrderByCustomerId(Long customerId);
+    List<ShopOrder> findOrdersByCustomerId(Long customerId);
 }

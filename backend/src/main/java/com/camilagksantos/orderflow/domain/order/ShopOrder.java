@@ -1,9 +1,11 @@
 package com.camilagksantos.orderflow.domain.order;
 
+import com.camilagksantos.orderflow.domain.cart.Cart;
 import com.camilagksantos.orderflow.domain.shared.Money;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 public record ShopOrder(
         String id,
@@ -69,5 +71,39 @@ public record ShopOrder(
             default -> false;
         };
         if (!valid) throw new IllegalStateException("Cannot transition from " + status + " to " + target);
+    }
+
+    public static ShopOrder fromCart(Cart cart, String idempotencyKey) {
+        return new ShopOrder(
+                UUID.randomUUID().toString(),
+                "ORD-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(),
+                cart.customerId(),
+                OrderStatus.PENDING,
+                cart.items().stream()
+                        .map(item -> new OrderItem(
+                                UUID.randomUUID().toString(),
+                                null,
+                                item.productId(),
+                                item.productName(),
+                                item.productSku(),
+                                item.unitPrice(),
+                                item.quantity()
+                        ))
+                        .toList(),
+                cart.total(),
+                Money.zero(),
+                Money.zero(),
+                cart.total(),
+                null,
+                null,
+                null,
+                idempotencyKey,
+                LocalDateTime.now(),
+                LocalDateTime.now(),
+                null,
+                null,
+                null,
+                null
+        );
     }
 }
