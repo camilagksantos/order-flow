@@ -6,7 +6,7 @@ import java.util.List;
 
 public interface FindOrderUseCase {
 
-    ShopOrder findById(String id);
-    ShopOrder findByOrderNumber(String orderNumber);
-    List<ShopOrder> findByCustomerId(Long customerId);
+    ShopOrder findOrderById(String id);
+    ShopOrder findOrderByNumber(String orderNumber);
+    List<ShopOrder> findOrderByCustomerId(Long customerId);
 }

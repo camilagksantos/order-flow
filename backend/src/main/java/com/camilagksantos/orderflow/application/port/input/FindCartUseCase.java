@@ -4,5 +4,5 @@ import com.camilagksantos.orderflow.domain.cart.Cart;
 
 public interface FindCartUseCase {
 
-    Cart findByCustomerId(Long customerId);
+    Cart findCartByCustomerId(Long customerId);
 }

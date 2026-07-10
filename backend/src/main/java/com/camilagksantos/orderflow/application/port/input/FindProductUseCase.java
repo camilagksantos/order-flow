@@ -6,8 +6,8 @@ import java.util.List;
 
 public interface FindProductUseCase {
 
-    Product findById(Long id);
-    Product findBySku(String sku);
-    List<Product> findAll();
-    List<Product> findByCategoryId(Long categoryId);
+    Product findProductById(Long id);
+    Product findProductBySku(String sku);
+    List<Product> findAllProducts();
+    List<Product> findProductsByCategoryId(Long categoryId);
 }

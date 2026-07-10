@@ -4,5 +4,5 @@ import com.camilagksantos.orderflow.domain.cart.Cart;
 
 public interface RemoveFromCartUseCase {
 
-    Cart  execute(Long customerId, String itemId);
+    Cart  removeFromCart(Long customerId, String itemId);
 }

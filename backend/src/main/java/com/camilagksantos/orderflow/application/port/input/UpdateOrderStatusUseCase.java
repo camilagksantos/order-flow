@@ -5,5 +5,5 @@ import com.camilagksantos.orderflow.domain.order.ShopOrder;
 
 public interface UpdateOrderStatusUseCase {
 
-    ShopOrder execute(String orderId, OrderStatus status);
+    ShopOrder updateOrderStatus(String orderId, OrderStatus status);
 }

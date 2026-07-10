@@ -10,9 +10,9 @@
 - [x] Domain models (aggregates and entities)
 - [x] Domain events (DomainEvent, OrderCreatedEvent, OrderPaidEvent, OrderCancelledEvent, OrderShippedEvent, OrderStatusChangedEvent)
 - [x] Domain exceptions
-- [ ] JPA entities
-- [ ] Input ports (use case interfaces)
-- [ ] Output ports (repository interfaces)
+- [x] JPA entities
+- [x] Input ports (use case interfaces)
+- [x] Output ports (repository interfaces)
 - [ ] Application services
 - [ ] JPA repositories
 - [ ] Persistence adapters

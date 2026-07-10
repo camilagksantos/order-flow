@@ -4,5 +4,5 @@ import com.camilagksantos.orderflow.domain.customer.Customer;
 
 public interface FindCustomerUseCase {
 
-    Customer findById(Long id);
+    Customer findCustomerById(Long id);
 }

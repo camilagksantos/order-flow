@@ -4,5 +4,5 @@ import com.camilagksantos.orderflow.domain.product.Product;
 
 public interface UpdateProductUseCase {
 
-    Product execute(Long id, Product product);
+    Product updateProduct(Long id, Product product);
 }

@@ -5,5 +5,5 @@ import com.camilagksantos.orderflow.domain.cart.CartItem;
 
 public interface AddToCartUseCase {
 
-    Cart execute(Long customerId, CartItem item);
+    Cart addToCart(Long customerId, CartItem item);
 }

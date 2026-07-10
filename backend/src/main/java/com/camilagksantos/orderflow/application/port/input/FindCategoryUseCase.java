@@ -6,6 +6,6 @@ import java.util.List;
 
 public interface FindCategoryUseCase {
 
-    Category findCategory(Long id);
-    List<Category> findAll();
+    Category findCategoryById(Long id);
+    List<Category> findAllCategories();
 }
