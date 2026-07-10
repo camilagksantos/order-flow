@@ -293,7 +293,7 @@ Allows inspection and replay without data loss.
 - Spring Mail
 - MySQL 8
 - Flyway
-- ModelMapper
+- MapStruct
 - Apache POI
 - Lombok
 - SpringDoc OpenAPI

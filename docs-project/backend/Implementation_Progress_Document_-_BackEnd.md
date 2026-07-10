@@ -251,6 +251,7 @@ Repositories:
 - Port packages renamed from in/out to input/output — out is reserved by IntelliJ
 - OrderItem does not use orphanRemoval — historical records must be preserved
 - CartItem uses orphanRemoval — items do not exist outside their cart
+- ModelMapper replaced with MapStruct — compile-time mapping, type-safe, no runtime reflection
 
 ## 13. Known Issues / Blockers
 
