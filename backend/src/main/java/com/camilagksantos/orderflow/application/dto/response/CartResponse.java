@@ -1,6 +1,7 @@
 package com.camilagksantos.orderflow.application.dto.response;
 
 import com.camilagksantos.orderflow.domain.cart.CartStatus;
+import com.camilagksantos.orderflow.domain.shared.Money;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -10,5 +11,5 @@ public record CartResponse(
         Long customerId,
         CartStatus status,
         List<CartItemResponse> items,
-        BigDecimal total
+        Money total
 ) {}

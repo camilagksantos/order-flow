@@ -96,6 +96,7 @@ public class ShopOrder {
                         .productSku(item.getProductSku())
                         .unitPrice(item.getUnitPrice())
                         .quantity(item.getQuantity())
+                        .subtotal(item.subtotal())
                         .build())
                 .collect(Collectors.toList());
 

@@ -2,6 +2,7 @@ package com.camilagksantos.orderflow.application.dto.response;
 
 import com.camilagksantos.orderflow.domain.order.OrderStatus;
 import com.camilagksantos.orderflow.domain.order.PaymentMethod;
+import com.camilagksantos.orderflow.domain.shared.Money;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -13,10 +14,10 @@ public record OrderResponse(
         Long customerId,
         OrderStatus status,
         List<OrderItemResponse> items,
-        BigDecimal subtotal,
-        BigDecimal shippingCost,
-        BigDecimal discountAmount,
-        BigDecimal totalAmount,
+        Money subtotal,
+        Money shippingCost,
+        Money discountAmount,
+        Money totalAmount,
         PaymentMethod paymentMethod,
         String trackingCode,
         LocalDateTime createdAt,

@@ -20,6 +20,7 @@ public class OrderItem {
     private String productSku;
     private Money unitPrice;
     private int quantity;
+    private Money subtotal;
 
     public Money subtotal() {
         return unitPrice.multiply(quantity);

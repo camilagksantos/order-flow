@@ -10,5 +10,5 @@ public record AddressResponse(
         String district,
         String postalCode,
         String country,
-        boolean isDefault
+        boolean defaultAddress
 ) {}

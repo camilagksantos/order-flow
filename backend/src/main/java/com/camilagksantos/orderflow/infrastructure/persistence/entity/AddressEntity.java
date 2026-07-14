@@ -45,5 +45,5 @@ public class AddressEntity {
     private String country;
 
     @Column(nullable = false)
-    private boolean isDefault;
+    private boolean defaultAddress;
 }

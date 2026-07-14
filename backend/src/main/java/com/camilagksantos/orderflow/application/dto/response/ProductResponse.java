@@ -1,6 +1,7 @@
 package com.camilagksantos.orderflow.application.dto.response;
 
 import com.camilagksantos.orderflow.domain.product.ProductStatus;
+import com.camilagksantos.orderflow.domain.shared.Money;
 
 import java.math.BigDecimal;
 
@@ -9,7 +10,7 @@ public record ProductResponse(
         String name,
         String description,
         String sku,
-        BigDecimal price,
+        Money price,
         int stockQuantity,
         int reservedQuantity,
         int availableQuantity,

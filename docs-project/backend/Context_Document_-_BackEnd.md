@@ -178,19 +178,34 @@ Persistence Mappers (infrastructure/persistence/mapper/)
 - Entity ↔ Domain
 - Used by persistence adapters
 
-MapStruct is used for all mappings — compile-time code generation, type-safe,
-no runtime reflection.
+MapStruct is used for all mappings — compile-time code generation, type-safe, no runtime reflection.
 
-Custom expressions are used for type-incompatible fields:
+Type conversion is handled via default methods declared directly in each mapper interface.
+MapStruct detects the conversion automatically by matching method signatures — no @Named or qualifiedByName needed.
 
-- Money (domain) ↔ BigDecimal (entity) — Money.of(BigDecimal) / money.amount()
-- Email (domain) ↔ String (entity) — new Email(String) / email.value()
-- NIF (domain) ↔ String (entity) — new NIF(String) / nif.value()
+Conversion methods used:
+
+- BigDecimal → Money: default Money toMoney(BigDecimal value)
+- Money → BigDecimal: default BigDecimal toBigDecimal(Money money)
+- String → Email: default Email toEmail(String value)
+- Email → String: default String fromEmail(Email email)
+- String → NIF: default NIF toNIF(String value)
+- NIF → String: default String fromNIF(NIF nif)
 
 Ignored fields in toEntity() mappings:
 
 - createdAt, updatedAt — managed by @PrePersist / @PreUpdate
-- Relationship fields (customer, cart, order) — set manually in adapters when needed
+- Relationship fields (customer, cart, order) — set by JPA cascade
+
+Response DTOs use Money directly instead of BigDecimal — richer representation
+in JSON responses (amount + currency) and easier to identify in logs.
+
+Request DTOs use BigDecimal for price fields — clients send simple numeric values,
+not Money objects.
+
+boolean fields renamed from isX to xBoolean pattern (e.g. isDefault → defaultAddress)
+to avoid MapStruct/Lombok getter conflict where Lombok generates isX() getter
+and MapStruct interprets the property name as x instead of isX.
 
 ### 6.5 Transactional Outbox Pattern
 

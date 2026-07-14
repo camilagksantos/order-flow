@@ -23,5 +23,5 @@ public class Address {
     private String district;
     private String postalCode;
     private String country;
-    private boolean isDefault;
+    private boolean defaultAddress;
 }

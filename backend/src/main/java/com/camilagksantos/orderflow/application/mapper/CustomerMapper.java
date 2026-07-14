@@ -1,26 +1,27 @@
-package com.camilagksantos.orderflow.infrastructure.persistence.mapper;
+package com.camilagksantos.orderflow.application.mapper;
 
+import com.camilagksantos.orderflow.application.dto.request.RegisterCustomerRequest;
+import com.camilagksantos.orderflow.application.dto.response.CustomerResponse;
 import com.camilagksantos.orderflow.domain.customer.Customer;
 import com.camilagksantos.orderflow.domain.shared.Email;
 import com.camilagksantos.orderflow.domain.shared.NIF;
-import com.camilagksantos.orderflow.infrastructure.persistence.entity.CustomerEntity;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
-@Mapper(componentModel = "spring", uses = {AddressPersistenceMapper.class})
-public interface CustomerPersistenceMapper {
+@Mapper(componentModel = "spring", uses = {AddressMapper.class})
+public interface CustomerMapper {
 
     @Mapping(target = "email", source = "email")
     @Mapping(target = "nif", source = "nif")
-    @Mapping(target = "userId", source = "user.id")
-    Customer toDomain(CustomerEntity entity);
+    CustomerResponse toResponse(Customer domain);
 
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "userId", ignore = true)
     @Mapping(target = "email", source = "email")
     @Mapping(target = "nif", source = "nif")
-    @Mapping(target = "user", ignore = true)
-    @Mapping(target = "createdAt", ignore = true)
-    @Mapping(target = "updatedAt", ignore = true)
-    CustomerEntity toEntity(Customer domain);
+    @Mapping(target = "status", ignore = true)
+    @Mapping(target = "addresses", ignore = true)
+    Customer toDomain(RegisterCustomerRequest request);
 
     default Email toEmail(String value) {
         return new Email(value);

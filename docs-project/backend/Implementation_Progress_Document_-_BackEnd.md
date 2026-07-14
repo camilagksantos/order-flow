@@ -13,6 +13,7 @@
 - JPA repositories
 - Persistence mappers
 - Persistence adapters
+- DTOs (request / response)
 
 ## 2. Database Migrations
 
@@ -234,29 +235,31 @@ Repositories:
 
 Located in infrastructure/persistence/mapper/.
 MapStruct interfaces — implementation generated at compile time.
+Type conversions via default methods in each mapper — MapStruct detects automatically by signature.
 
 Mappers:
 
 - RolePersistenceMapper — Role ↔ RoleEntity (direct field mapping)
 - UserPersistenceMapper — User ↔ UserEntity (uses RolePersistenceMapper)
 - CategoryPersistenceMapper — Category ↔ CategoryEntity (direct field mapping)
-- ProductPersistenceMapper — Product ↔ ProductEntity (Money expression, uses CategoryPersistenceMapper)
+- ProductPersistenceMapper — Product ↔ ProductEntity (toMoney/toBigDecimal default methods)
 - AddressPersistenceMapper — Address ↔ AddressEntity (customer.id → customerId)
-- CustomerPersistenceMapper — Customer ↔ CustomerEntity (Email/NIF expressions, uses AddressPersistenceMapper)
-- CartItemPersistenceMapper — CartItem ↔ CartItemEntity (Money expression, cart.id → cartId)
+- CustomerPersistenceMapper — Customer ↔ CustomerEntity (toEmail/fromEmail/toNIF/fromNIF default methods)
+- CartItemPersistenceMapper — CartItem ↔ CartItemEntity (toMoney/toBigDecimal default methods, cart.id → cartId)
 - CartPersistenceMapper — Cart ↔ CartEntity (customer.id → customerId, uses CartItemPersistenceMapper)
-- OrderItemPersistenceMapper — OrderItem ↔ OrderItemEntity (Money expression, order.id → orderId)
-- ShopOrderPersistenceMapper — ShopOrder ↔ ShopOrderEntity (Money expressions, uses OrderItemPersistenceMapper)
-- PaymentPersistenceMapper — Payment ↔ PaymentEntity (Money expression, order.id → orderId)
+- OrderItemPersistenceMapper — OrderItem ↔ OrderItemEntity (toMoney/toBigDecimal default methods, order.id → orderId)
+- ShopOrderPersistenceMapper — ShopOrder ↔ ShopOrderEntity (uses OrderItemPersistenceMapper)
+- PaymentPersistenceMapper — Payment ↔ PaymentEntity (toMoney/toBigDecimal default methods, order.id → orderId)
 - OutboxEventPersistenceMapper — OutboxEvent ↔ OutboxEventEntity (direct mapping)
 
 Key Decisions:
 
 - createdAt and updatedAt ignored in toEntity() — managed by @PrePersist / @PreUpdate
 - Relationship fields (customer, cart, order) ignored in toEntity() — set by JPA cascade
-- Money ↔ BigDecimal conversion via expression: Money.of(BigDecimal) / money.amount()
-- Email ↔ String conversion via expression: new Email(String) / email.value()
-- NIF ↔ String conversion via expression: new NIF(String) / nif.value()
+- Type conversions via default methods — no expressions, no @Named, MapStruct detects by signature
+- isDefault renamed to defaultAddress — avoids Lombok/MapStruct conflict with boolean isX() getter pattern
+- OrderItem.subtotal added as real field — calculated on fromCart() and persisted, avoids expression in mapper
+- ShopOrderPersistenceMapper does not declare toMoney/toBigDecimal — inherits from OrderItemPersistenceMapper via uses
 
 ## 12. Persistence Adapters
 
@@ -275,10 +278,69 @@ Adapters:
 - OutboxEventJpaAdapter — implements OutboxEventRepositoryPort
 - ProcessedEventJpaAdapter — implements ProcessedEventRepositoryPort
 
-## 13. In Progress
+## 13. DTOs
 
-- Application mappers (DTO ↔ Domain)
-- DTOs (request / response — Java records)
+Located in application/dto/.
+Implemented as Java records — immutable, no behaviour, ideal for transfer objects.
+
+Request DTOs (application/dto/request/):
+
+- CreateCategoryRequest — name
+- CreateProductRequest — name, description, sku, price, stockQuantity, categoryId, imageUrl
+- UpdateProductRequest — name, description, price, stockQuantity, categoryId, imageUrl (no sku — immutable after creation)
+- RegisterCustomerRequest — name, email, nif, phone
+- CreateAddressRequest — street, number, complement, neighborhood, city, district, postalCode
+- AddToCartRequest — productId, quantity
+- CheckoutRequest — idempotencyKey, addressId
+- UpdateOrderStatusRequest — status
+- CancelOrderRequest — reason
+- ProcessPaymentRequest — orderId, method, cardLastFour, cardBrand, mbwayPhone, mbEntity, mbReference
+- LoginRequest — email, password
+
+Response DTOs (application/dto/response/):
+
+- CategoryResponse — id, name
+- ProductResponse — id, name, description, sku, price, stockQuantity, reservedQuantity, availableQuantity, category, imageUrl, status
+- AddressResponse — id, street, number, complement, neighborhood, city, district, postalCode, country, isDefault
+- CustomerResponse — id, name, email, nif, phone, status, addresses
+- CartItemResponse — id, productId, productName, productSku, unitPrice, quantity, subtotal
+- CartResponse — id, customerId, status, items, total
+- OrderItemResponse — id, productId, productName, productSku, unitPrice, quantity, subtotal
+- OrderResponse — id, orderNumber, customerId, status, items, subtotal, shippingCost, discountAmount, totalAmount, paymentMethod, trackingCode, timestamps
+- PaymentResponse — id, orderId, amount, method, status, transactionId, processedAt, createdAt
+- TokenResponse — accessToken, refreshToken, tokenType, expiresIn
+- ErrorResponse — status, error, message, path, timestamp
+
+Key Decision:
+
+- One DTO class per operation where fields differ (CreateProduct vs UpdateProduct — sku immutable)
+- Single DTO class when fields are identical across operations
+
+## 14. Application Mappers
+
+Located in application/mapper/.
+MapStruct interfaces — DTO ↔ Domain conversion.
+Same default method pattern as persistence mappers.
+
+Mappers:
+
+- CategoryMapper — CategoryResponse ← Category, Category ← CreateCategoryRequest
+- ProductMapper — ProductResponse ← Product, Product ← CreateProductRequest/UpdateProductRequest (toMoney default method for BigDecimal → Money)
+- AddressMapper — AddressResponse ← Address, Address ← CreateAddressRequest
+- CustomerMapper — CustomerResponse ← Customer, Customer ← RegisterCustomerRequest (toEmail/fromEmail/toNIF/fromNIF default methods)
+- CartMapper — CartResponse ← Cart, CartItemResponse ← CartItem (total and subtotal via expression — calculated methods)
+- OrderMapper — OrderResponse ← ShopOrder, OrderItemResponse ← OrderItem
+- PaymentMapper — PaymentResponse ← Payment
+
+Key Decisions:
+
+- Response DTOs use Money directly — richer JSON representation and easier log identification
+- Request DTOs use BigDecimal for price — clients send simple numeric values
+- availableQuantity mapped via expression in ProductMapper — calculated method, not a stored field
+- CartMapper uses expression for total and subtotal — Cart.total() and CartItem.subtotal() are calculated methods
+
+## 15. In Progress
+
 - REST controllers
 - RabbitMQ configuration
 - Messaging consumers
@@ -291,7 +353,7 @@ Adapters:
 - Unit tests
 - Integration tests
 
-## 14. Decisions Made During Implementation
+## 16. Decisions Made During Implementation
 
 - Domain models migrated from Java records to Lombok classes — records caused excessive MapStruct complexity due to behaviour methods being treated as mappable properties
 - DTOs will remain as Java records — immutable transfer objects with no behaviour
@@ -311,7 +373,13 @@ Adapters:
 - CartItem uses orphanRemoval — items do not exist outside their cart
 - MapStruct replaced ModelMapper — compile-time mapping, type-safe, no runtime reflection
 - Category moved to domain/category/ — independent package, not nested under product
+- Type conversions in MapStruct via default methods — MapStruct detects automatically by signature, no @Named or expressions needed
+- isDefault renamed to defaultAddress — avoids Lombok/MapStruct conflict with boolean isX() getter pattern
+- OrderItem.subtotal added as real field — calculated on fromCart() and persisted, avoids expression in mapper
+- Response DTOs use Money directly — richer JSON representation and easier log identification
+- Request DTOs use BigDecimal for price — clients send simple numeric values
+- ShopOrderPersistenceMapper inherits toMoney/toBigDecimal from OrderItemPersistenceMapper via uses — avoids ambiguous mapping methods
 
-## 15. Known Issues / Blockers
+## 17. Known Issues / Blockers
 
 None.

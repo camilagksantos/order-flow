@@ -1,5 +1,7 @@
 package com.camilagksantos.orderflow.application.dto.response;
 
+import com.camilagksantos.orderflow.domain.shared.Money;
+
 import java.math.BigDecimal;
 
 public record OrderItemResponse(
@@ -7,7 +9,7 @@ public record OrderItemResponse(
         Long productId,
         String productName,
         String productSku,
-        BigDecimal unitPrice,
+        Money unitPrice,
         int quantity,
-        BigDecimal subtotal
+        Money subtotal
 ) {}
