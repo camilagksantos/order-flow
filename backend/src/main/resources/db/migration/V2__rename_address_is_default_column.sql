@@ -1,0 +1,1 @@
+ALTER TABLE address CHANGE COLUMN is_default default_address BOOLEAN NOT NULL DEFAULT FALSE;
