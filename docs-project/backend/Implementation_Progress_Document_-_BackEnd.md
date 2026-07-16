@@ -339,9 +339,38 @@ Key Decisions:
 - availableQuantity mapped via expression in ProductMapper — calculated method, not a stored field
 - CartMapper uses expression for total and subtotal — Cart.total() and CartItem.subtotal() are calculated methods
 
-## 15. In Progress
+## 15. REST Controllers
 
-- REST controllers
+Located in infrastructure/adapter/input/web/.
+Receive HTTP requests and delegate to use cases.
+Annotated with @RestController and @RequiredArgsConstructor.
+
+Controllers:
+
+- CategoryController — POST /api/v1/categories, GET /api/v1/categories, GET /api/v1/categories/{id}
+- ProductController — POST, GET, GET/{id}, GET/sku/{sku}, GET/category/{categoryId}, PUT/{id}, DELETE/{id}
+- CustomerController — POST /api/v1/customers, GET /api/v1/customers/{id}
+- CartController — GET /customer/{customerId}, POST /customer/{customerId}/items, DELETE /customer/{customerId}/items/{itemId}, POST /customer/{customerId}/checkout
+- OrderController — GET /{id}, GET /number/{orderNumber}, GET /customer/{customerId}, PATCH /{id}/status, POST /{id}/cancel
+- ReportController — GET /api/v1/reports/sales
+
+Public routes (no authentication required):
+
+- POST /api/v1/customers
+- GET /api/v1/products, GET /api/v1/products/{id}, GET /api/v1/products/sku/{sku}
+- GET /api/v1/categories, GET /api/v1/categories/{id}
+- POST /api/v1/auth/login, POST /api/v1/auth/refresh
+
+Private routes — CUSTOMER:
+
+- Cart, Order (own), Customer (own)
+
+Private routes — ADMIN:
+
+- POST/PUT/DELETE products, POST categories, PATCH order status, GET reports
+
+## 16. In Progress
+
 - RabbitMQ configuration
 - Messaging consumers
 - Email adapter
@@ -353,7 +382,7 @@ Key Decisions:
 - Unit tests
 - Integration tests
 
-## 16. Decisions Made During Implementation
+## 17. Decisions Made During Implementation
 
 - Domain models migrated from Java records to Lombok classes — records caused excessive MapStruct complexity due to behaviour methods being treated as mappable properties
 - DTOs will remain as Java records — immutable transfer objects with no behaviour
@@ -380,6 +409,6 @@ Key Decisions:
 - Request DTOs use BigDecimal for price — clients send simple numeric values
 - ShopOrderPersistenceMapper inherits toMoney/toBigDecimal from OrderItemPersistenceMapper via uses — avoids ambiguous mapping methods
 
-## 17. Known Issues / Blockers
+## 18. Known Issues / Blockers
 
 None.
