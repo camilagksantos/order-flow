@@ -26,11 +26,13 @@
 ## 2. Database Migrations
 
 Files:
-- V1__create_schema.sql
-- V2__rename_address_is_default_column.sql
-- V3__add_customer_email_to_shop_order.sql
+
+- V1\_\_create_schema.sql
+- V2\_\_rename_address_is_default_column.sql
+- V3\_\_add_customer_email_to_shop_order.sql
 
 Key Decisions:
+
 - All tables in singular form following modern JPA convention
 - shop_order used instead of order (reserved word in MySQL)
 - String UUIDs as primary keys for cart, cart_item, shop_order, order_item, payment, outbox_event, processed_event
@@ -41,9 +43,11 @@ Key Decisions:
 ## 3. Application Configuration
 
 Files:
+
 - application.yaml
 
 Key Decisions:
+
 - spring.jpa.open-in-view: false
 - spring.jpa.hibernate.ddl-auto: validate
 - Hibernate dialect removed — auto-detected by Hibernate 7
@@ -60,6 +64,7 @@ Records exposed behaviour methods as mappable properties to MapStruct, requiring
 excessive ignore annotations. Lombok classes eliminated this complexity entirely.
 
 Value Objects (domain/shared/):
+
 - Money — amount (BigDecimal) + currency (String, default EUR), with add/subtract/multiply operations
 - Email — validated by regex, lowercase enforced on construction (record)
 - NIF — 9 digits, check digit validated using Portuguese algorithm (record)
@@ -68,6 +73,7 @@ Note: Money, Email and NIF remain as records — they are pure value objects
 with no behaviour methods that would conflict with MapStruct.
 
 Aggregates:
+
 - Product — reserve/release/activate/deactivate/confirmSale (void mutations)
 - Customer — block/activate (void mutations)
 - Cart — addItem/removeItem/convert (void mutations) + newCart (static factory)
@@ -75,6 +81,7 @@ Aggregates:
 - Payment — approve/decline (void mutations)
 
 Supporting Entities:
+
 - Category (domain/category/)
 - Address (domain/customer/)
 - CartItem — stores price snapshot at time of addition
@@ -82,6 +89,7 @@ Supporting Entities:
 - OutboxEvent
 
 Enums:
+
 - ProductStatus: ACTIVE, INACTIVE, DISCONTINUED
 - CustomerStatus: ACTIVE, INACTIVE, BLOCKED
 - CartStatus: ACTIVE, CONVERTED, ABANDONED
@@ -91,6 +99,7 @@ Enums:
 - OutboxEventStatus: PENDING, SENT, FAILED
 
 Domain Events (domain/event/):
+
 - DomainEvent (interface)
 - OrderCreatedEvent
 - OrderPaidEvent
@@ -99,12 +108,14 @@ Domain Events (domain/event/):
 - OrderStatusChangedEvent
 
 Auth Models (domain/auth/):
+
 - User — activate/deactivate (void mutations), hasRole check
 - Role
 
 ## 5. Domain Exceptions
 
 Hierarchy:
+
 - DomainException (abstract base — extends RuntimeException)
   - ResourceNotFoundException → HTTP 404
     - ProductNotFoundException
@@ -124,6 +135,7 @@ Enums mapped using EnumType.STRING.
 @PrePersist and @PreUpdate used for automatic timestamp management.
 
 Entities:
+
 - RoleEntity → table: role
 - UserEntity → table: user (roles: ManyToMany EAGER)
 - CategoryEntity → table: category
@@ -139,6 +151,7 @@ Entities:
 - ProcessedEventEntity → table: processed_event
 
 Key Decisions:
+
 - CartEntity uses orphanRemoval = true — cart items do not exist outside a cart
 - ShopOrderEntity does NOT use orphanRemoval — order items are historical records
 
@@ -148,6 +161,7 @@ Located in application/port/output/.
 Define what the application needs from the outside world.
 
 Ports:
+
 - ProductRepositoryPort — save, findById, findBySku, findAll, findByCategoryId, deleteById
 - CategoryRepositoryPort — save, findById, findAll
 - CustomerRepositoryPort — save, findById, findByEmail, findByNif
@@ -167,6 +181,7 @@ One interface per use case following Interface Segregation Principle.
 Method names are descriptive — no generic execute() pattern.
 
 Use Cases:
+
 - CreateProductUseCase — createProduct
 - FindProductUseCase — findProductById, findProductBySku, findAllProducts, findProductsByCategoryId
 - UpdateProductUseCase — updateProduct
@@ -192,6 +207,7 @@ Implement input ports and depend exclusively on output ports.
 Spring @Service + Lombok @RequiredArgsConstructor for dependency injection.
 
 Services:
+
 - CategoryService — implements CreateCategoryUseCase, FindCategoryUseCase
 - ProductService — implements CreateProductUseCase, FindProductUseCase, UpdateProductUseCase, DeleteProductUseCase
 - CustomerService — implements RegisterCustomerUseCase, FindCustomerUseCase
@@ -201,6 +217,7 @@ Services:
 - ReportService — implements GenerateSalesReportUseCase (placeholder — returns empty byte[])
 
 Key Decisions:
+
 - OrderService.checkout() is @Transactional — order creation and outbox event persist atomically
 - CartService.addToCart() creates a new cart if none exists for the customer
 - ShopOrder.fromCart() converts cart items to order items as price snapshots at checkout time
@@ -213,6 +230,7 @@ Located in infrastructure/persistence/repository/.
 Extend JpaRepository — Spring Data generates implementation at runtime.
 
 Repositories:
+
 - RoleJpaRepository — JpaRepository<RoleEntity, Long>
 - UserJpaRepository — findByEmail
 - CategoryJpaRepository — JpaRepository<CategoryEntity, Long>
@@ -232,6 +250,7 @@ MapStruct interfaces — implementation generated at compile time.
 Type conversions via default methods in each mapper — MapStruct detects automatically by signature.
 
 Mappers:
+
 - RolePersistenceMapper — Role ↔ RoleEntity (direct field mapping)
 - UserPersistenceMapper — User ↔ UserEntity (uses RolePersistenceMapper)
 - CategoryPersistenceMapper — Category ↔ CategoryEntity (direct field mapping)
@@ -246,6 +265,7 @@ Mappers:
 - OutboxEventPersistenceMapper — OutboxEvent ↔ OutboxEventEntity (direct mapping)
 
 Key Decisions:
+
 - createdAt and updatedAt ignored in toEntity() — managed by @PrePersist / @PreUpdate
 - Relationship fields (customer, cart, order) ignored in toEntity() — set by JPA cascade
 - Type conversions via default methods — no expressions, no @Named, MapStruct detects by signature
@@ -260,6 +280,7 @@ Implement output ports using JPA repositories and persistence mappers.
 Annotated with @Component — Spring registers them as beans.
 
 Adapters:
+
 - CategoryJpaAdapter — implements CategoryRepositoryPort
 - ProductJpaAdapter — implements ProductRepositoryPort
 - CustomerJpaAdapter — implements CustomerRepositoryPort
@@ -275,6 +296,7 @@ Located in application/dto/.
 Implemented as Java records — immutable, no behaviour, ideal for transfer objects.
 
 Request DTOs (application/dto/request/):
+
 - CreateCategoryRequest — name
 - CreateProductRequest — name, description, sku, price, stockQuantity, categoryId, imageUrl
 - UpdateProductRequest — name, description, price, stockQuantity, categoryId, imageUrl (no sku — immutable after creation)
@@ -288,6 +310,7 @@ Request DTOs (application/dto/request/):
 - LoginRequest — email, password
 
 Response DTOs (application/dto/response/):
+
 - CategoryResponse — id, name
 - ProductResponse — id, name, description, sku, price (Money), stockQuantity, reservedQuantity, availableQuantity, category, imageUrl, status
 - AddressResponse — id, street, number, complement, neighborhood, city, district, postalCode, country, defaultAddress
@@ -301,6 +324,7 @@ Response DTOs (application/dto/response/):
 - ErrorResponse — status, error, message, path, timestamp
 
 Key Decisions:
+
 - One DTO class per operation where fields differ (CreateProduct vs UpdateProduct — sku immutable)
 - Single DTO class when fields are identical across operations
 - Response DTOs use Money directly — richer JSON representation and easier log identification
@@ -313,6 +337,7 @@ MapStruct interfaces — DTO ↔ Domain conversion.
 Same default method pattern as persistence mappers.
 
 Mappers:
+
 - CategoryMapper — CategoryResponse ← Category, Category ← CreateCategoryRequest
 - ProductMapper — ProductResponse ← Product, Product ← CreateProductRequest/UpdateProductRequest (toMoney default method for BigDecimal → Money)
 - AddressMapper — AddressResponse ← Address, Address ← CreateAddressRequest
@@ -322,6 +347,7 @@ Mappers:
 - PaymentMapper — PaymentResponse ← Payment
 
 Key Decisions:
+
 - availableQuantity mapped via expression in ProductMapper — calculated method, not a stored field
 - CartMapper uses expression for total and subtotal — Cart.total() and CartItem.subtotal() are calculated methods
 
@@ -332,6 +358,7 @@ Receive HTTP requests and delegate to use cases.
 Annotated with @RestController and @RequiredArgsConstructor.
 
 Controllers:
+
 - CategoryController — POST /api/v1/categories, GET /api/v1/categories, GET /api/v1/categories/{id}
 - ProductController — POST, GET, GET/{id}, GET/sku/{sku}, GET/category/{categoryId}, PUT/{id}, DELETE/{id}
 - CustomerController — POST /api/v1/customers, GET /api/v1/customers/{id}
@@ -340,15 +367,18 @@ Controllers:
 - ReportController — GET /api/v1/reports/sales
 
 Public routes (no authentication required):
+
 - POST /api/v1/customers
 - GET /api/v1/products, GET /api/v1/products/{id}, GET /api/v1/products/sku/{sku}
 - GET /api/v1/categories, GET /api/v1/categories/{id}
 - POST /api/v1/auth/login, POST /api/v1/auth/refresh
 
 Private routes — CUSTOMER:
+
 - Cart, Order (own), Customer (own)
 
 Private routes — ADMIN:
+
 - POST/PUT/DELETE products, POST categories, PATCH order status, GET reports
 
 ## 16. RabbitMQ Configuration
@@ -358,11 +388,13 @@ Declares all exchanges, queues and bindings as Spring beans.
 RabbitAdmin creates them automatically in RabbitMQ on startup.
 
 Exchanges:
+
 - orderflow.orders (TopicExchange) — order lifecycle events
 - orderflow.notifications (FanoutExchange) — email notifications
 - orderflow.dlx (DirectExchange) — dead letter routing
 
 Queues (all durable with x-dead-letter-exchange):
+
 - order.created.queue → routing key: order.created
 - order.paid.queue → routing key: order.paid
 - order.shipped.queue → routing key: order.shipped
@@ -371,6 +403,7 @@ Queues (all durable with x-dead-letter-exchange):
 - orderflow.dead-letter.queue → final destination for failed messages
 
 Key Decisions:
+
 - JacksonJsonMessageConverter used instead of deprecated Jackson2JsonMessageConverter — Spring AMQP 4.0 Jackson 3 support
 - All queues configured with x-dead-letter-exchange — failed messages routed automatically to DLQ
 - RabbitTemplate configured with JacksonJsonMessageConverter for automatic JSON serialization
@@ -380,10 +413,12 @@ Key Decisions:
 Located in infrastructure/adapter/output/messaging/ and infrastructure/adapter/input/messaging/.
 
 Publisher:
+
 - RabbitMQEventPublisher — implements EventPublisherPort, publishes events to orderflow.orders exchange via routing key
 - OutboxEventScheduler — @Scheduled(fixedDelay = 5000), reads PENDING outbox events and publishes to RabbitMQ, marks as SENT or FAILED
 
 Consumers (infrastructure/adapter/input/messaging/):
+
 - OrderCreatedConsumer — reserves stock for each order item
 - OrderPaidConsumer — confirms sale, decrements stockQuantity and reservedQuantity
 - OrderCancelledConsumer — releases reserved stock
@@ -398,11 +433,13 @@ Implements EmailNotificationPort using JavaMailSender.
 Sends emails via MailHog in development environment.
 
 Methods:
+
 - sendOrderConfirmation — sends confirmation email with order number and total
 - sendOrderShipped — sends shipping email with tracking code
 - sendOrderCancelled — sends cancellation email with reason
 
 Key Decisions:
+
 - Sender address externalised to application.yaml (app.mail.from) — no hardcoded values
 - customerEmail added as snapshot field in ShopOrder — avoids extra repository call in email adapter
 - SimpleMailMessage used — plain text emails sufficient for portfolio scope
@@ -413,6 +450,7 @@ Located in infrastructure/config/handler/GlobalExceptionHandler.java.
 Centralised exception handling via @RestControllerAdvice.
 
 Exception mapping:
+
 - ResourceNotFoundException → 404 Not Found
 - BusinessRuleException → 422 Unprocessable Entity
 - MethodArgumentNotValidException → 400 Bad Request (field errors joined)
@@ -420,6 +458,7 @@ Exception mapping:
 - Exception → 500 Internal Server Error
 
 Error response format (ErrorResponse record):
+
 - status: HTTP status code
 - error: HTTP status reason phrase
 - message: exception message
@@ -427,6 +466,7 @@ Error response format (ErrorResponse record):
 - timestamp: LocalDateTime of occurrence
 
 Key Decisions:
+
 - GlobalExceptionHandler placed in infrastructure/config/handler/ — configuration concern, not a controller
 - HttpStatus.UNPROCESSABLE_ENTITY deprecated in Spring 7.0 — replaced with status code 422 directly
 
@@ -438,14 +478,65 @@ Configures SpringDoc OpenAPI with project metadata.
 Available at: http://localhost:8080/swagger-ui.html
 
 Info:
+
 - Title: order-flow API
 - Version: 1.0.0
 - Contact: Camila Kfouri (https://www.linkedin.com/in/camila-kfouri/)
 - Server: http://localhost:8080 (Local Development)
 
+## 21. Security Configuration
+
+Located in infrastructure/config/security/.
+
+Components:
+
+- JwtService — generates and validates JWT tokens, extracts claims
+- UserDetailsServiceImpl — implements UserDetailsService, loads user from database by email
+- JwtAuthenticationFilter — intercepts every request, validates JWT and authenticates user in SecurityContext
+- SecurityConfig — defines public/private routes, CORS, stateless session, JWT filter chain
+
+Located in infrastructure/adapter/input/web/:
+
+- AuthController — POST /api/v1/auth/login, POST /api/v1/auth/refresh
+
+JWT Configuration (application.yaml):
+
+- app.jwt.secret — signing key
+- app.jwt.expiration — 900000ms (15 minutes)
+- app.jwt.refresh-expiration — 604800000ms (7 days)
+
+Token claims:
+
+- sub: user email
+- roles: list of granted authorities
+- iat: issued at
+- exp: expiration
+
+Public routes:
+
+- POST /api/v1/auth/login
+- POST /api/v1/auth/refresh
+- POST /api/v1/customers
+- GET /api/v1/products/\*\*
+- GET /api/v1/categories/\*\*
+- /swagger-ui/**, /v3/api-docs/**
+
+ADMIN only routes:
+
+- POST/PUT/DELETE /api/v1/products/\*\*
+- POST /api/v1/categories/\*\*
+- PATCH /api/v1/orders/\*/status
+- /api/v1/reports/\*\*
+
+Key Decisions:
+
+- JWT stateless — no server-side sessions
+- BCryptPasswordEncoder for password hashing
+- Refresh token rotated on every refresh — new access + refresh token issued
+- DaoAuthenticationProvider configured with UserDetailsService constructor + setPasswordEncoder setter — Spring Security 7.0 API
+
 ## In Progress
 
-- Security configuration (JWT)
 - Excel report generation (Apache POI)
 - Unit tests
 - Integration tests
@@ -480,6 +571,9 @@ Info:
 - JacksonJsonMessageConverter replaces deprecated Jackson2JsonMessageConverter — Spring AMQP 4.0 Jackson 3 support
 - app.mail.from externalised to application.yaml — no hardcoded values in adapters
 - Product.confirmSale() added — decrements both stockQuantity and reservedQuantity on payment confirmation
+- JWT stateless authentication — no server-side sessions, access token 15min, refresh token 7 days
+- Refresh token rotated on every refresh — new pair issued on each refresh request
+- DaoAuthenticationProvider configured via constructor (UserDetailsService) + setter (PasswordEncoder) — Spring Security 7.0 API
 
 ## Known Issues / Blockers
 
