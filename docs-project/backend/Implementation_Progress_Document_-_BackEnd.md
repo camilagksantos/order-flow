@@ -425,7 +425,30 @@ Key Decisions:
 - customerEmail added as snapshot field in ShopOrder — avoids extra repository call in email adapter
 - SimpleMailMessage used — plain text emails sufficient for portfolio scope
 
-## 19. In Progress
+## 19. Exception Handling
+
+Located in infrastructure/config/handler/GlobalExceptionHandler.java.
+Centralised exception handling via @RestControllerAdvice.
+
+Exception mapping:
+- ResourceNotFoundException → 404 Not Found
+- BusinessRuleException → 422 Unprocessable Entity
+- MethodArgumentNotValidException → 400 Bad Request (field errors joined)
+- DataIntegrityViolationException → 409 Conflict
+- Exception → 500 Internal Server Error
+
+Error response format (ErrorResponse record):
+- status: HTTP status code
+- error: HTTP status reason phrase
+- message: exception message
+- path: request URI
+- timestamp: LocalDateTime of occurrence
+
+Key Decision:
+- GlobalExceptionHandler placed in infrastructure/config/handler/ — configuration concern, not a controller
+- HttpStatus.UNPROCESSABLE_ENTITY deprecated in Spring 7.0 — replaced with status code 422 directly
+
+### In Progress
 
 - Outbox event scheduler
 - Exception handling (@ControllerAdvice)
@@ -435,7 +458,7 @@ Key Decisions:
 - Unit tests
 - Integration tests
 
-## 20. Decisions Made During Implementation
+### Decisions Made During Implementation
 
 - Domain models migrated from Java records to Lombok classes — records caused excessive MapStruct complexity due to behaviour methods being treated as mappable properties
 - DTOs will remain as Java records — immutable transfer objects with no behaviour
@@ -465,6 +488,6 @@ Key Decisions:
 - JacksonJsonMessageConverter replaces deprecated Jackson2JsonMessageConverter — Spring AMQP 4.0 Jackson 3 support
 - app.mail.from externalised to application.yaml — no hardcoded values in adapters
 
-## 21. Known Issues / Blockers
+### Known Issues / Blockers
 
 None.
