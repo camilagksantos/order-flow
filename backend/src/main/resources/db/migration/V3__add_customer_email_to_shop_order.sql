@@ -1,0 +1,1 @@
+ALTER TABLE shop_order ADD COLUMN customer_email VARCHAR(150) NOT NULL DEFAULT '';

@@ -5,13 +5,16 @@ import com.camilagksantos.orderflow.application.port.input.CheckoutUseCase;
 import com.camilagksantos.orderflow.application.port.input.FindOrderUseCase;
 import com.camilagksantos.orderflow.application.port.input.UpdateOrderStatusUseCase;
 import com.camilagksantos.orderflow.application.port.output.CartRepositoryPort;
+import com.camilagksantos.orderflow.application.port.output.CustomerRepositoryPort;
 import com.camilagksantos.orderflow.application.port.output.OrderRepositoryPort;
 import com.camilagksantos.orderflow.application.port.output.OutboxEventRepositoryPort;
 import com.camilagksantos.orderflow.domain.cart.Cart;
+import com.camilagksantos.orderflow.domain.customer.Customer;
 import com.camilagksantos.orderflow.domain.event.OutboxEvent;
 import com.camilagksantos.orderflow.domain.event.OutboxEventStatus;
 import com.camilagksantos.orderflow.domain.exception.BusinessRuleException;
 import com.camilagksantos.orderflow.domain.exception.CartNotFoundException;
+import com.camilagksantos.orderflow.domain.exception.CustomerNotFoundException;
 import com.camilagksantos.orderflow.domain.exception.OrderNotFoundException;
 import com.camilagksantos.orderflow.domain.order.OrderStatus;
 import com.camilagksantos.orderflow.domain.order.ShopOrder;
@@ -30,6 +33,7 @@ public class OrderService implements CheckoutUseCase, FindOrderUseCase, UpdateOr
     private final OrderRepositoryPort orderRepositoryPort;
     private final CartRepositoryPort cartRepositoryPort;
     private final OutboxEventRepositoryPort outboxEventRepositoryPort;
+    private final CustomerRepositoryPort customerRepositoryPort;
 
     @Override
     @Transactional
@@ -44,7 +48,10 @@ public class OrderService implements CheckoutUseCase, FindOrderUseCase, UpdateOr
 
         if (cart.isEmpty()) throw new BusinessRuleException("Cart is empty");
 
-        ShopOrder order = ShopOrder.fromCart(cart, idempotencyKey);
+        Customer customer = customerRepositoryPort.findById(customerId)
+                .orElseThrow(() -> new CustomerNotFoundException(customerId));
+
+        ShopOrder order = ShopOrder.fromCart(cart, idempotencyKey, customer.getEmail().value());
         ShopOrder savedOrder = orderRepositoryPort.save(order);
 
         outboxEventRepositoryPort.save(new OutboxEvent(

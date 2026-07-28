@@ -23,6 +23,7 @@ public class ShopOrder {
     private String id;
     private String orderNumber;
     private Long customerId;
+    private String customerEmail;
     private OrderStatus status;
     private List<OrderItem> items;
     private Money subtotal;
@@ -87,7 +88,7 @@ public class ShopOrder {
         if (!valid) throw new InvalidOrderStatusTransitionException(status.name(), target.name());
     }
 
-    public static ShopOrder fromCart(Cart cart, String idempotencyKey) {
+    public static ShopOrder fromCart(Cart cart, String idempotencyKey, String customerEmail) {
         List<OrderItem> orderItems = cart.getItems().stream()
                 .map(item -> OrderItem.builder()
                         .id(UUID.randomUUID().toString())
@@ -106,6 +107,7 @@ public class ShopOrder {
                 .id(UUID.randomUUID().toString())
                 .orderNumber("ORD-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
                 .customerId(cart.getCustomerId())
+                .customerEmail(customerEmail)
                 .status(OrderStatus.PENDING)
                 .items(orderItems)
                 .subtotal(total)

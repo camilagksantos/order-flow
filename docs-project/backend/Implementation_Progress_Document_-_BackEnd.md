@@ -369,11 +369,64 @@ Private routes — ADMIN:
 
 - POST/PUT/DELETE products, POST categories, PATCH order status, GET reports
 
-## 16. In Progress
+## 16. RabbitMQ Configuration
 
-- RabbitMQ configuration
-- Messaging consumers
-- Email adapter
+Located in infrastructure/config/RabbitMQConfig.java.
+Declares all exchanges, queues and bindings as Spring beans.
+RabbitAdmin creates them automatically in RabbitMQ on startup.
+
+Exchanges:
+- orderflow.orders (TopicExchange) — order lifecycle events
+- orderflow.notifications (FanoutExchange) — email notifications
+- orderflow.dlx (DirectExchange) — dead letter routing
+
+Queues (all durable with x-dead-letter-exchange):
+- order.created.queue → routing key: order.created
+- order.paid.queue → routing key: order.paid
+- order.shipped.queue → routing key: order.shipped
+- order.cancelled.queue → routing key: order.cancelled
+- email.notification.queue → fanout (no routing key)
+- orderflow.dead-letter.queue → final destination for failed messages
+
+Key Decisions:
+- JacksonJsonMessageConverter used instead of deprecated Jackson2JsonMessageConverter — Spring AMQP 4.0 Jackson 3 support
+- All queues configured with x-dead-letter-exchange — failed messages routed automatically to DLQ
+- RabbitTemplate configured with JacksonJsonMessageConverter for automatic JSON serialization
+
+## 17. Messaging
+
+Located in infrastructure/adapter/output/messaging/ and infrastructure/adapter/input/messaging/.
+
+Publisher:
+- RabbitMQEventPublisher — implements EventPublisherPort, publishes events to orderflow.orders exchange via routing key
+- OutboxEventScheduler — @Scheduled(fixedDelay = 5000), reads PENDING outbox events and publishes to RabbitMQ, marks as SENT or FAILED
+
+Consumers (infrastructure/adapter/input/messaging/):
+- OrderCreatedConsumer — reserves stock for each order item
+- OrderPaidConsumer — confirms sale, decrements stockQuantity and reservedQuantity
+- OrderCancelledConsumer — releases reserved stock
+- OrderShippedConsumer — registers event as processed
+
+All consumers check processed_event table before processing — idempotency guarantee.
+
+## 18. Email Adapter
+
+Located in infrastructure/adapter/output/email/MailEmailAdapter.java.
+Implements EmailNotificationPort using JavaMailSender.
+Sends emails via MailHog in development environment.
+
+Methods:
+- sendOrderConfirmation — sends confirmation email with order number and total
+- sendOrderShipped — sends shipping email with tracking code
+- sendOrderCancelled — sends cancellation email with reason
+
+Key Decisions:
+- Sender address externalised to application.yaml (app.mail.from) — no hardcoded values
+- customerEmail added as snapshot field in ShopOrder — avoids extra repository call in email adapter
+- SimpleMailMessage used — plain text emails sufficient for portfolio scope
+
+## 19. In Progress
+
 - Outbox event scheduler
 - Exception handling (@ControllerAdvice)
 - Security configuration (JWT)
@@ -382,7 +435,7 @@ Private routes — ADMIN:
 - Unit tests
 - Integration tests
 
-## 17. Decisions Made During Implementation
+## 20. Decisions Made During Implementation
 
 - Domain models migrated from Java records to Lombok classes — records caused excessive MapStruct complexity due to behaviour methods being treated as mappable properties
 - DTOs will remain as Java records — immutable transfer objects with no behaviour
@@ -408,7 +461,10 @@ Private routes — ADMIN:
 - Response DTOs use Money directly — richer JSON representation and easier log identification
 - Request DTOs use BigDecimal for price — clients send simple numeric values
 - ShopOrderPersistenceMapper inherits toMoney/toBigDecimal from OrderItemPersistenceMapper via uses — avoids ambiguous mapping methods
+- customerEmail added as snapshot to ShopOrder — consistent with price snapshot pattern, avoids dependency on CustomerRepository in email adapter
+- JacksonJsonMessageConverter replaces deprecated Jackson2JsonMessageConverter — Spring AMQP 4.0 Jackson 3 support
+- app.mail.from externalised to application.yaml — no hardcoded values in adapters
 
-## 18. Known Issues / Blockers
+## 21. Known Issues / Blockers
 
 None.

@@ -52,4 +52,9 @@ public class Product {
     public void activate() {
         this.status = ProductStatus.ACTIVE;
     }
+
+    public void confirmSale(int quantity) {
+        this.stockQuantity -= quantity;
+        this.reservedQuantity -= quantity;
+    }
 }

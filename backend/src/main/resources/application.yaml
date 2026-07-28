@@ -30,3 +30,13 @@ spring:
   mail:
     host: localhost
     port: 1025
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
+
+app:
+  mail:
+    from: noreply@orderflow.pt

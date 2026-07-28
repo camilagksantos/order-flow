@@ -13,7 +13,6 @@ import com.camilagksantos.orderflow.application.port.input.RemoveFromCartUseCase
 import com.camilagksantos.orderflow.domain.cart.Cart;
 import com.camilagksantos.orderflow.domain.cart.CartItem;
 import com.camilagksantos.orderflow.domain.order.ShopOrder;
-import com.camilagksantos.orderflow.domain.shared.Money;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
