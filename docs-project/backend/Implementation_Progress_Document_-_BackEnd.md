@@ -535,10 +535,33 @@ Key Decisions:
 - Refresh token rotated on every refresh — new access + refresh token issued
 - DaoAuthenticationProvider configured with UserDetailsService constructor + setPasswordEncoder setter — Spring Security 7.0 API
 
+## 22. Unit Tests
+
+Located in src/test/java/com/camilagksantos/orderflow/.
+
+Domain Tests:
+
+- ShopOrderTest — 9 tests: state transitions, invalid transitions, cancellation
+- ProductTest — 9 tests: stock reservation, release, confirmSale, activation
+- CartTest — 8 tests: addItem, removeItem, total calculation, conversion
+- CustomerTest — 2 tests: block, activate
+
+Application Service Tests:
+
+- ProductServiceTest — 6 tests: create, find, delete, not found exceptions
+- OrderServiceTest — 8 tests: checkout, empty cart, duplicate idempotency key, find, cancel, update status
+
+Total: 42 unit tests — all passing
+
+Key Decisions:
+
+- Tests run via IntelliJ directly — Lombok annotation processing works correctly
+- NIF 123456789 used as valid test NIF — passes Portuguese check digit algorithm
+- Mockito warnings with Java 26 are known and do not affect test results
+
 ## In Progress
 
 - Excel report generation (Apache POI)
-- Unit tests
 - Integration tests
 
 ## Decisions Made During Implementation
