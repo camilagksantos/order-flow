@@ -544,18 +544,36 @@ Domain Tests:
 - ShopOrderTest — 9 tests: state transitions, invalid transitions, cancellation
 - ProductTest — 9 tests: stock reservation, release, confirmSale, activation
 - CartTest — 8 tests: addItem, removeItem, total calculation, conversion
+- CartItemTest — 2 tests: subtotal calculation
 - CustomerTest — 2 tests: block, activate
+- PaymentTest — 3 tests: approve, decline, attempt count
+- MoneyTest — 8 tests: operations, validations, scale
+- EmailTest — 6 tests: validation, lowercase conversion
+- NIFTest — 6 tests: validation, check digit
 
 Application Service Tests:
 
-- ProductServiceTest — 6 tests: create, find, delete, not found exceptions
-- OrderServiceTest — 8 tests: checkout, empty cart, duplicate idempotency key, find, cancel, update status
+- CategoryServiceTest — 4 tests: create, find, findAll, not found
+- CustomerServiceTest — 3 tests: register, find, not found
+- CartServiceTest — 5 tests: add, create new cart, remove, find, not found
+- ProductServiceTest — 6 tests: create, find, findAll, delete, not found
+- OrderServiceTest — 8 tests: checkout, empty cart, duplicate key, find, cancel, update status
+- PaymentServiceTest — 1 test: process payment
 
-Total: 42 unit tests — all passing
+Application Mapper Tests:
+
+- CategoryMapperTest — 2 tests: toResponse, toDomain
+- ProductMapperTest — 2 tests: toResponse, toDomain
+- CustomerMapperTest — 2 tests: toResponse, toDomain
+- CartMapperTest — 2 tests: toResponse, toItemResponse
+- OrderMapperTest — 1 test: toResponse
+
+Total: 88 unit tests — all passing
 
 Key Decisions:
 
-- Tests run via IntelliJ directly — Lombok annotation processing works correctly
+- Mapper tests instantiate MapperImpl directly — no Spring context needed
+- Mappers with @Autowired dependencies use reflection to inject collaborators
 - NIF 123456789 used as valid test NIF — passes Portuguese check digit algorithm
 - Mockito warnings with Java 26 are known and do not affect test results
 
