@@ -222,7 +222,7 @@ Key Decisions:
 - CartService.addToCart() creates a new cart if none exists for the customer
 - ShopOrder.fromCart() converts cart items to order items as price snapshots at checkout time
 - Domain behaviour methods are void — state is mutated directly, then saved via repository
-- OrderService injects CustomerRepositoryPort to fetch customer email for ShopOrder snapshot
+- CheckoutUseCase.checkout() requires paymentMethod as an explicit parameter — ShopOrder.fromCart() enforces it as a required argument, preventing the payment_method NOT NULL column from ever being left unset
 
 ## 10. JPA Repositories
 
@@ -303,7 +303,7 @@ Request DTOs (application/dto/request/):
 - RegisterCustomerRequest — name, email, nif, phone
 - CreateAddressRequest — street, number, complement, neighborhood, city, district, postalCode
 - AddToCartRequest — productId, quantity
-- CheckoutRequest — idempotencyKey, addressId
+- CheckoutRequest — idempotencyKey, addressId, paymentMethod
 - UpdateOrderStatusRequest — status
 - CancelOrderRequest — reason
 - ProcessPaymentRequest — orderId, method, cardLastFour, cardBrand, mbwayPhone, mbEntity, mbReference
@@ -577,10 +577,39 @@ Key Decisions:
 - NIF 123456789 used as valid test NIF — passes Portuguese check digit algorithm
 - Mockito warnings with Java 26 are known and do not affect test results
 
+## 23. Integration Tests
+
+Located in src/test/java/com/camilagksantos/orderflow/.
+
+Base class:
+
+- BaseIntegrationTest — @SpringBootTest + @Testcontainers, spins up MySQL 8.0 and RabbitMQ containers via Testcontainers, registers dynamic properties for datasource and RabbitMQ
+
+Tests:
+
+- ProductFlowIntegrationTest — 5 tests: create category and product, find by id, find by sku, find all, reserve and release stock
+- CustomerFlowIntegrationTest — 5 tests: register customer, find by id, find by email, find by nif, return empty when not found
+- CartFlowIntegrationTest — 7 tests: create cart, create with items, calculate total, find by id, find active by customer id, remove item, convert
+
+Key Decisions:
+
+- @Transactional on test class — each test rolls back automatically, no state leakage between tests
+- MySQL and RabbitMQ managed by Testcontainers — real containers, no mocks
+- Dynamic properties registered via @DynamicPropertySource — datasource and RabbitMQ configured at runtime
+- spring-boot-starter-flyway required in Spring Boot 4.x — Flyway no longer auto-configures without explicit starter
+- baseline-on-migrate: true + baseline-version: 0 in application-test.yaml — handles empty schema on fresh container
+- Each integration test persists a UserEntity via UserJpaRepository before creating a Customer — customer.user_id is a NOT NULL UNIQUE FK to the user table
+- CartFlowIntegrationTest reuses a persistTestCustomer() helper chaining User -> Customer creation, same pattern as CustomerFlowIntegrationTest
+- shouldRemoveItemFromCart validates orphanRemoval behavior on CartEntity.items, indirectly confirming the @AfterMapping back-reference fix works correctly
+- OrderFlowIntegrationTest and PaymentFlowIntegrationTest reuse the persistTestCustomer() helper, extending the dependency chain to User -> Customer -> ShopOrder -> Payment
+- PaymentEntity.id is a manually-generated UUID String (no @GeneratedValue), consistent with Cart, CartItem, ShopOrder, OrderItem
+
 ## In Progress
 
+- Controller integration tests
 - Excel report generation (Apache POI)
-- Integration tests
+- Unit tests — frontend
+- Integration tests — frontend (Cypress)
 
 ## Decisions Made During Implementation
 
@@ -615,6 +644,12 @@ Key Decisions:
 - JWT stateless authentication — no server-side sessions, access token 15min, refresh token 7 days
 - Refresh token rotated on every refresh — new pair issued on each refresh request
 - DaoAuthenticationProvider configured via constructor (UserDetailsService) + setter (PasswordEncoder) — Spring Security 7.0 API
+- spring-boot-starter-flyway required explicitly in Spring Boot 4.x — auto-configuration removed
+- Testcontainers used for integration tests — MySQL and RabbitMQ real containers
+- @Transactional on integration test classes — automatic rollback between tests
+- Fixed CustomerPersistenceMapper bug where @Mapping(target = "user", ignore = true) silently persisted user_id as NULL despite Customer.userId being set in the domain object — replaced with explicit default conversion methods (Long <-> UserEntity), following the same pattern used for Money, Email and NIF
+- Fixed the same FK-reference bug across AddressPersistenceMapper (via CustomerPersistenceMapper), ShopOrderPersistenceMapper, and PaymentPersistenceMapper — same root cause and same fix pattern as the Customer/Cart mappers (see Context Document 6.15)
+- Fixed missing paymentMethod propagation in the checkout flow — CheckoutRequest, CheckoutUseCase, OrderService, and ShopOrder.fromCart() all lacked it, causing shop_order.payment_method (NOT NULL) to persist as null; fixed by adding it as a required parameter through the full chain from request DTO to domain factory (see Context Document 6.16)
 
 ## Known Issues / Blockers
 

@@ -4,8 +4,11 @@ import com.camilagksantos.orderflow.domain.customer.Customer;
 import com.camilagksantos.orderflow.domain.shared.Email;
 import com.camilagksantos.orderflow.domain.shared.NIF;
 import com.camilagksantos.orderflow.infrastructure.persistence.entity.CustomerEntity;
+import com.camilagksantos.orderflow.infrastructure.persistence.entity.UserEntity;
+import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
+import org.mapstruct.MappingTarget;
 
 @Mapper(componentModel = "spring", uses = {AddressPersistenceMapper.class})
 public interface CustomerPersistenceMapper {
@@ -17,10 +20,28 @@ public interface CustomerPersistenceMapper {
 
     @Mapping(target = "email", source = "email")
     @Mapping(target = "nif", source = "nif")
-    @Mapping(target = "user", ignore = true)
+    @Mapping(target = "user", source = "userId")
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
     CustomerEntity toEntity(Customer domain);
+
+    @AfterMapping
+    default void linkAddressesToCustomer(@MappingTarget CustomerEntity entity) {
+        if (entity.getAddresses() != null) {
+            entity.getAddresses().forEach(address -> address.setCustomer(entity));
+        }
+    }
+
+    default UserEntity toUserEntity(Long userId) {
+        if (userId == null) return null;
+        UserEntity user = new UserEntity();
+        user.setId(userId);
+        return user;
+    }
+
+    default Long fromUserEntity(UserEntity user) {
+        return user != null ? user.getId() : null;
+    }
 
     default Email toEmail(String value) {
         return new Email(value);

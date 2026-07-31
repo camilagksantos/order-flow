@@ -1,12 +1,12 @@
 package com.camilagksantos.orderflow.infrastructure.persistence.mapper;
 
 import com.camilagksantos.orderflow.domain.order.ShopOrder;
-import com.camilagksantos.orderflow.domain.shared.Money;
+import com.camilagksantos.orderflow.infrastructure.persistence.entity.CustomerEntity;
 import com.camilagksantos.orderflow.infrastructure.persistence.entity.ShopOrderEntity;
+import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
-
-import java.math.BigDecimal;
+import org.mapstruct.MappingTarget;
 
 @Mapper(componentModel = "spring", uses = {OrderItemPersistenceMapper.class})
 public interface ShopOrderPersistenceMapper {
@@ -18,7 +18,7 @@ public interface ShopOrderPersistenceMapper {
     @Mapping(target = "totalAmount", source = "totalAmount")
     ShopOrder toDomain(ShopOrderEntity entity);
 
-    @Mapping(target = "customer", ignore = true)
+    @Mapping(target = "customer", source = "customerId")
     @Mapping(target = "subtotal", source = "subtotal")
     @Mapping(target = "shippingCost", source = "shippingCost")
     @Mapping(target = "discountAmount", source = "discountAmount")
@@ -26,4 +26,22 @@ public interface ShopOrderPersistenceMapper {
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
     ShopOrderEntity toEntity(ShopOrder domain);
+
+    @AfterMapping
+    default void linkItemsToOrder(@MappingTarget ShopOrderEntity entity) {
+        if (entity.getItems() != null) {
+            entity.getItems().forEach(item -> item.setOrder(entity));
+        }
+    }
+
+    default CustomerEntity toCustomerEntity(Long customerId) {
+        if (customerId == null) return null;
+        CustomerEntity customer = new CustomerEntity();
+        customer.setId(customerId);
+        return customer;
+    }
+
+    default Long fromCustomerEntity(CustomerEntity customer) {
+        return customer != null ? customer.getId() : null;
+    }
 }

@@ -195,7 +195,11 @@ Conversion methods used:
 Ignored fields in toEntity() mappings:
 
 - createdAt, updatedAt — managed by @PrePersist / @PreUpdate
-- Relationship fields (customer, cart, order) — set by JPA cascade
+- Direct-owning relationship fields with no cascade dependency are set via
+  shallow entity references built from the raw domain ID, not truly "ignored"
+  — see 6.15 for the full pattern. Only child-side back-references in
+  bidirectional cascaded relations (e.g. CartItemEntity.cart) remain genuinely
+  ignored, resolved instead via @AfterMapping on the parent mapper.
 
 Response DTOs use Money directly instead of BigDecimal — richer representation
 in JSON responses (amount + currency) and easier to identify in logs.
@@ -287,6 +291,87 @@ Exception mapping:
 - Cart is always tied to an authenticated customer
 - CartItem stores price snapshot at time of addition
 - Cart converts to ShopOrder on checkout
+
+### 6.14 Customer-User Mapping (MapStruct)
+
+Customer.userId (Long, domain) maps to CustomerEntity.user (UserEntity, @OneToOne LAZY).
+
+Since these types are incompatible for direct MapStruct auto-mapping, explicit
+default conversion methods are declared in CustomerPersistenceMapper:
+
+- Long -> UserEntity: creates a "shallow" UserEntity with only the id set
+  (equivalent to EntityManager.getReference() semantics), sufficient for
+  Hibernate to resolve the FK on insert/update without loading the full User.
+- UserEntity -> Long: extracts the id directly.
+
+This assumes the referenced User already exists in the database at the time
+Customer is persisted — true for the current registration flow (User is
+always created before Customer). If Customer creation without a pre-existing
+User is ever required, the FK constraint will correctly reject the insert.
+
+Known pitfall: @Mapping(target = "user", ignore = true) silently drops the
+user_id value with no compilation error and no runtime exception — MapStruct
+simply leaves the field null. Since user_id is NOT NULL UNIQUE at the schema
+level, this only surfaces as a DataIntegrityViolationException at persistence
+time, not at the domain or mapping layer. Any @Mapping(ignore = true) on a
+NOT NULL column should be treated as a red flag during review.
+
+### 6.15 MapStruct FK Reference Pattern
+
+Applied consistently across persistence mappers whenever a domain object
+holds a raw ID (Long/String) but the corresponding JPA entity expects a
+full related entity object for a @ManyToOne/@OneToOne relationship:
+
+Simple relations (no cascade): a default conversion method builds a
+"shallow" entity instance with only the id set (equivalent to
+EntityManager.getReference() semantics) — sufficient for Hibernate to
+resolve the FK on insert/update.
+
+- Customer.userId -> UserEntity (CustomerPersistenceMapper)
+- Cart.customerId -> CustomerEntity (CartPersistenceMapper)
+- ShopOrder.customerId -> CustomerEntity (ShopOrderPersistenceMapper)
+- Payment.orderId -> ShopOrderEntity (PaymentPersistenceMapper)
+
+Bidirectional relations with cascade (@OneToMany mappedBy + CascadeType.ALL):
+the child mapper still ignores the back-reference (e.g. cart in
+CartItemPersistenceMapper), but the parent mapper adds an @AfterMapping
+method that iterates the mapped children and sets the back-reference
+after the object graph is built, before persistence.
+
+- CartPersistenceMapper.linkItemsToCart() -> CartItemEntity.cart
+- CustomerPersistenceMapper.linkAddressesToCustomer() -> AddressEntity.customer
+- ShopOrderPersistenceMapper.linkItemsToOrder() -> OrderItemEntity.order
+
+Known pitfall this replaces: @Mapping(target = "x", ignore = true) on a
+NOT NULL FK column silently persists null with no compile-time or
+mapping-time error — it only surfaces as a DataIntegrityViolationException
+at the database layer. Any ignored relationship field should be checked
+against the schema's NOT NULL constraints during review.
+
+### 6.16 Checkout PaymentMethod Propagation
+
+Bug found: OrderService.checkout() called ShopOrder.fromCart() without ever
+setting paymentMethod, despite shop_order.payment_method being NOT NULL.
+The root cause traced back further than the service — CheckoutRequest and
+CheckoutUseCase never carried paymentMethod at all, so the data was missing
+from the point of entry, not just forgotten in one method.
+
+Fix applied across the full chain:
+
+- CheckoutRequest gained a required paymentMethod field (@NotNull)
+- CheckoutUseCase.checkout() signature extended with PaymentMethod parameter
+- CartController passes request.paymentMethod() through to the use case
+- ShopOrder.fromCart() itself now requires paymentMethod as a parameter,
+  consistent with how idempotencyKey and customerEmail — data that cannot be
+  derived from the Cart — are already required parameters of that factory
+
+This mirrors the FK-reference pattern from 6.14/6.15 in spirit: a required
+piece of data was being silently left null with no compiler error, only
+surfacing as a DataIntegrityViolationException at persistence time. The
+difference here is the missing data originates from outside the domain
+entirely (the client's checkout request), not from an entity relationship —
+so the fix reaches into the DTO and use case layers rather than just the
+persistence mapper.
 
 ## 7. RabbitMQ Configuration
 

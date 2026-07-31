@@ -3,6 +3,7 @@ package com.camilagksantos.orderflow.infrastructure.persistence.mapper;
 import com.camilagksantos.orderflow.domain.payment.Payment;
 import com.camilagksantos.orderflow.domain.shared.Money;
 import com.camilagksantos.orderflow.infrastructure.persistence.entity.PaymentEntity;
+import com.camilagksantos.orderflow.infrastructure.persistence.entity.ShopOrderEntity;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -15,10 +16,17 @@ public interface PaymentPersistenceMapper {
     @Mapping(target = "amount", source = "amount")
     Payment toDomain(PaymentEntity entity);
 
-    @Mapping(target = "order", ignore = true)
+    @Mapping(target = "order", source = "orderId")
     @Mapping(target = "amount", source = "amount")
     @Mapping(target = "createdAt", ignore = true)
     PaymentEntity toEntity(Payment domain);
+
+    default ShopOrderEntity toShopOrderEntity(String orderId) {
+        if (orderId == null) return null;
+        ShopOrderEntity order = new ShopOrderEntity();
+        order.setId(orderId);
+        return order;
+    }
 
     default Money toMoney(BigDecimal value) {
         return Money.of(value);

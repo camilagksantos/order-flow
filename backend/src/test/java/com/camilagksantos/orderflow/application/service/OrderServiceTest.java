@@ -116,7 +116,7 @@ class OrderServiceTest {
         when(outboxEventRepositoryPort.save(any())).thenReturn(null);
         when(cartRepositoryPort.save(any())).thenReturn(cart);
 
-        ShopOrder result = orderService.checkout(1L, idempotencyKey);
+        ShopOrder result = orderService.checkout(1L, idempotencyKey, PaymentMethod.MBWAY);
 
         assertThat(result).isNotNull();
         assertThat(result.getOrderNumber()).isEqualTo("ORD-TEST-001");
@@ -139,7 +139,7 @@ class OrderServiceTest {
         when(orderRepositoryPort.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.empty());
         when(cartRepositoryPort.findActiveByCustomerId(1L)).thenReturn(Optional.of(emptyCart));
 
-        assertThatThrownBy(() -> orderService.checkout(1L, idempotencyKey))
+        assertThatThrownBy(() -> orderService.checkout(1L, idempotencyKey, PaymentMethod.MBWAY))
                 .isInstanceOf(BusinessRuleException.class);
     }
 
@@ -149,7 +149,7 @@ class OrderServiceTest {
         when(orderRepositoryPort.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.empty());
         when(cartRepositoryPort.findActiveByCustomerId(1L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> orderService.checkout(1L, idempotencyKey))
+        assertThatThrownBy(() -> orderService.checkout(1L, idempotencyKey, PaymentMethod.MBWAY))
                 .isInstanceOf(CartNotFoundException.class);
     }
 
@@ -158,7 +158,7 @@ class OrderServiceTest {
         String idempotencyKey = UUID.randomUUID().toString();
         when(orderRepositoryPort.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.of(order));
 
-        assertThatThrownBy(() -> orderService.checkout(1L, idempotencyKey))
+        assertThatThrownBy(() -> orderService.checkout(1L, idempotencyKey, PaymentMethod.MBWAY))
                 .isInstanceOf(BusinessRuleException.class);
     }
 

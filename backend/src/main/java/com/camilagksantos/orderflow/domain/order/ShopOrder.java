@@ -88,7 +88,7 @@ public class ShopOrder {
         if (!valid) throw new InvalidOrderStatusTransitionException(status.name(), target.name());
     }
 
-    public static ShopOrder fromCart(Cart cart, String idempotencyKey, String customerEmail) {
+    public static ShopOrder fromCart(Cart cart, String idempotencyKey, String customerEmail, PaymentMethod paymentMethod) {
         List<OrderItem> orderItems = cart.getItems().stream()
                 .map(item -> OrderItem.builder()
                         .id(UUID.randomUUID().toString())
@@ -114,6 +114,7 @@ public class ShopOrder {
                 .shippingCost(Money.zero())
                 .discountAmount(Money.zero())
                 .totalAmount(total)
+                .paymentMethod(paymentMethod)
                 .idempotencyKey(idempotencyKey)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())

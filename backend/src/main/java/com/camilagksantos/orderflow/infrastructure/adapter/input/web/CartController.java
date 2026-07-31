@@ -64,7 +64,7 @@ public class CartController {
     public ResponseEntity<OrderResponse> checkout(
             @PathVariable Long customerId,
             @Valid @RequestBody CheckoutRequest request) {
-        ShopOrder order = checkoutUseCase.checkout(customerId, request.idempotencyKey());
+        ShopOrder order = checkoutUseCase.checkout(customerId, request.idempotencyKey(), request.paymentMethod());
         return ResponseEntity.status(HttpStatus.CREATED).body(orderMapper.toResponse(order));
     }
 }

@@ -17,6 +17,7 @@ import com.camilagksantos.orderflow.domain.exception.CartNotFoundException;
 import com.camilagksantos.orderflow.domain.exception.CustomerNotFoundException;
 import com.camilagksantos.orderflow.domain.exception.OrderNotFoundException;
 import com.camilagksantos.orderflow.domain.order.OrderStatus;
+import com.camilagksantos.orderflow.domain.order.PaymentMethod;
 import com.camilagksantos.orderflow.domain.order.ShopOrder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -37,7 +38,7 @@ public class OrderService implements CheckoutUseCase, FindOrderUseCase, UpdateOr
 
     @Override
     @Transactional
-    public ShopOrder checkout(Long customerId, String idempotencyKey) {
+    public ShopOrder checkout(Long customerId, String idempotencyKey, PaymentMethod paymentMethod) {
         orderRepositoryPort.findByIdempotencyKey(idempotencyKey)
                 .ifPresent(order -> {
                     throw new BusinessRuleException("Order already exists for idempotency key: " + idempotencyKey);
@@ -51,7 +52,7 @@ public class OrderService implements CheckoutUseCase, FindOrderUseCase, UpdateOr
         Customer customer = customerRepositoryPort.findById(customerId)
                 .orElseThrow(() -> new CustomerNotFoundException(customerId));
 
-        ShopOrder order = ShopOrder.fromCart(cart, idempotencyKey, customer.getEmail().value());
+        ShopOrder order = ShopOrder.fromCart(cart, idempotencyKey, customer.getEmail().value(), paymentMethod);
         ShopOrder savedOrder = orderRepositoryPort.save(order);
 
         outboxEventRepositoryPort.save(new OutboxEvent(
