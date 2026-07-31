@@ -47,7 +47,7 @@ class CustomerMapperTest {
     @Test
     void shouldMapRegisterRequestToDomain() {
         RegisterCustomerRequest request = new RegisterCustomerRequest(
-                "Camila Kfouri", "camila@test.com", "123456789", "+351 912 345 678"
+                "Camila Kfouri", "camila@test.com", "123456789", "+351 912 345 678", "senha12345"
         );
 
         Customer customer = customerMapper.toDomain(request);

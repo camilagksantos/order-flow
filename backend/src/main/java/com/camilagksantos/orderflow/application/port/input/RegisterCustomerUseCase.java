@@ -4,5 +4,5 @@ import com.camilagksantos.orderflow.domain.customer.Customer;
 
 public interface RegisterCustomerUseCase {
 
-    Customer registerCustomer(Customer customer);
+    Customer registerCustomer(Customer customer, String rawPassword);
 }

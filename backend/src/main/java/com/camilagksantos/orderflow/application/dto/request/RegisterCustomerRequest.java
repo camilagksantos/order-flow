@@ -9,5 +9,6 @@ public record RegisterCustomerRequest(
         @NotBlank @Size(min = 2, max = 120) String name,
         @NotBlank @Email String email,
         @NotBlank @Pattern(regexp = "\\d{9}", message = "NIF must have exactly 9 digits") String nif,
-        String phone
+        String phone,
+        @NotBlank @Size(min = 8, max = 100) String password
 ) {}

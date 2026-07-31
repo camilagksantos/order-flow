@@ -26,7 +26,7 @@ public class CustomerController {
     public ResponseEntity<CustomerResponse> register(@Valid @RequestBody RegisterCustomerRequest request) {
         Customer customer = customerMapper.toDomain(request);
         customer.setStatus(CustomerStatus.ACTIVE);
-        Customer created = registerCustomerUseCase.registerCustomer(customer);
+        Customer created = registerCustomerUseCase.registerCustomer(customer, request.password());
         return ResponseEntity.status(HttpStatus.CREATED).body(customerMapper.toResponse(created));
     }
 
