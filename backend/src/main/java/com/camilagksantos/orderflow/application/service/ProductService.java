@@ -47,8 +47,14 @@ public class ProductService implements CreateProductUseCase, FindProductUseCase,
 
     @Override
     public Product updateProduct(Long id, Product product) {
-        findProductById(id);
-        return productRepositoryPort.save(product);
+        Product existing = findProductById(id);
+        existing.setName(product.getName());
+        existing.setDescription(product.getDescription());
+        existing.setPrice(product.getPrice());
+        existing.setStockQuantity(product.getStockQuantity());
+        existing.setCategory(product.getCategory());
+        existing.setImageUrl(product.getImageUrl());
+        return productRepositoryPort.save(existing);
     }
 
     @Override

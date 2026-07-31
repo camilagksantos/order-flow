@@ -20,6 +20,7 @@ public record OrderResponse(
         Money totalAmount,
         PaymentMethod paymentMethod,
         String trackingCode,
+        String cancelReason,
         LocalDateTime createdAt,
         LocalDateTime paidAt,
         LocalDateTime shippedAt,

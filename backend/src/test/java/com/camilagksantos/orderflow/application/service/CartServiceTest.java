@@ -1,10 +1,14 @@
 package com.camilagksantos.orderflow.application.service;
 
 import com.camilagksantos.orderflow.application.port.output.CartRepositoryPort;
+import com.camilagksantos.orderflow.application.port.output.ProductRepositoryPort;
 import com.camilagksantos.orderflow.domain.cart.Cart;
 import com.camilagksantos.orderflow.domain.cart.CartItem;
 import com.camilagksantos.orderflow.domain.cart.CartStatus;
 import com.camilagksantos.orderflow.domain.exception.CartNotFoundException;
+import com.camilagksantos.orderflow.domain.exception.ProductNotFoundException;
+import com.camilagksantos.orderflow.domain.product.Product;
+import com.camilagksantos.orderflow.domain.product.ProductStatus;
 import com.camilagksantos.orderflow.domain.shared.Money;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,11 +33,15 @@ class CartServiceTest {
     @Mock
     private CartRepositoryPort cartRepositoryPort;
 
+    @Mock
+    private ProductRepositoryPort productRepositoryPort;
+
     @InjectMocks
     private CartService cartService;
 
     private Cart cart;
     private CartItem item;
+    private Product product;
 
     @BeforeEach
     void setUp() {
@@ -54,14 +62,25 @@ class CartServiceTest {
                 .unitPrice(Money.of(BigDecimal.valueOf(10)))
                 .quantity(2)
                 .build();
+
+        product = Product.builder()
+                .id(1L)
+                .name("Product A")
+                .sku("SKU-001")
+                .price(Money.of(BigDecimal.valueOf(10)))
+                .stockQuantity(50)
+                .reservedQuantity(0)
+                .status(ProductStatus.ACTIVE)
+                .build();
     }
 
     @Test
     void shouldAddItemToExistingCart() {
+        when(productRepositoryPort.findById(1L)).thenReturn(Optional.of(product));
         when(cartRepositoryPort.findActiveByCustomerId(1L)).thenReturn(Optional.of(cart));
         when(cartRepositoryPort.save(any())).thenReturn(cart);
 
-        Cart result = cartService.addToCart(1L, item);
+        Cart result = cartService.addToCart(1L, 1L, 2);
 
         assertThat(result).isNotNull();
         verify(cartRepositoryPort).save(any());
@@ -69,12 +88,23 @@ class CartServiceTest {
 
     @Test
     void shouldCreateNewCartWhenNoneExists() {
+        when(productRepositoryPort.findById(1L)).thenReturn(Optional.of(product));
         when(cartRepositoryPort.findActiveByCustomerId(1L)).thenReturn(Optional.empty());
         when(cartRepositoryPort.save(any())).thenReturn(cart);
 
-        cartService.addToCart(1L, item);
+        cartService.addToCart(1L, 1L, 2);
 
         verify(cartRepositoryPort, times(2)).save(any());
+    }
+
+    @Test
+    void shouldThrowWhenProductNotFound() {
+        when(productRepositoryPort.findById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> cartService.addToCart(1L, 99L, 1))
+                .isInstanceOf(ProductNotFoundException.class);
+
+        verify(cartRepositoryPort, never()).save(any());
     }
 
     @Test

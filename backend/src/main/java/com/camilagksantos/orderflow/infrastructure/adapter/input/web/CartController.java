@@ -43,12 +43,7 @@ public class CartController {
     public ResponseEntity<CartResponse> addItem(
             @PathVariable Long customerId,
             @Valid @RequestBody AddToCartRequest request) {
-        CartItem item = CartItem.builder()
-                .id(UUID.randomUUID().toString())
-                .productId(request.productId())
-                .quantity(request.quantity())
-                .build();
-        Cart cart = addToCartUseCase.addToCart(customerId, item);
+        Cart cart = addToCartUseCase.addToCart(customerId, request.productId(), request.quantity());
         return ResponseEntity.status(HttpStatus.CREATED).body(cartMapper.toResponse(cart));
     }
 

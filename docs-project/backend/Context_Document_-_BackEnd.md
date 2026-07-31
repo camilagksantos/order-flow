@@ -352,26 +352,159 @@ against the schema's NOT NULL constraints during review.
 
 Bug found: OrderService.checkout() called ShopOrder.fromCart() without ever
 setting paymentMethod, despite shop_order.payment_method being NOT NULL.
-The root cause traced back further than the service — CheckoutRequest and
-CheckoutUseCase never carried paymentMethod at all, so the data was missing
-from the point of entry, not just forgotten in one method.
+CheckoutRequest and CheckoutUseCase never carried paymentMethod at all, so
+the data was missing from the point of entry, not just forgotten in one method.
 
-Fix applied across the full chain:
+Fix applied across the full chain: CheckoutRequest gained a required
+paymentMethod field; CheckoutUseCase.checkout() signature extended with a
+PaymentMethod parameter; CartController passes it through; ShopOrder.fromCart()
+itself now requires paymentMethod as a parameter, consistent with how
+idempotencyKey and customerEmail — data that cannot be derived from the Cart —
+are already required parameters of that factory.
 
-- CheckoutRequest gained a required paymentMethod field (@NotNull)
-- CheckoutUseCase.checkout() signature extended with PaymentMethod parameter
-- CartController passes request.paymentMethod() through to the use case
-- ShopOrder.fromCart() itself now requires paymentMethod as a parameter,
-  consistent with how idempotencyKey and customerEmail — data that cannot be
-  derived from the Cart — are already required parameters of that factory
+### 6.17 Customer Registration and User/Role Creation
 
-This mirrors the FK-reference pattern from 6.14/6.15 in spirit: a required
-piece of data was being silently left null with no compiler error, only
-surfacing as a DataIntegrityViolationException at persistence time. The
-difference here is the missing data originates from outside the domain
-entirely (the client's checkout request), not from an entity relationship —
-so the fix reaches into the DTO and use case layers rather than just the
-persistence mapper.
+Bug found: CustomerService.registerCustomer() only saved the Customer,
+never creating a User account. RegisterCustomerRequest had no password field,
+CustomerMapper ignored userId entirely, and no endpoint anywhere in the
+system created a User — meaning every call to POST /api/v1/customers would
+fail on the customer.user_id NOT NULL UNIQUE constraint, and even if it
+hadn't, the registered customer would have had no way to ever log in.
+
+This also surfaced a gap in the hexagonal architecture itself: User and Role
+persistence bypassed the port/adapter pattern entirely, accessed directly via
+UserJpaRepository from UserDetailsServiceImpl and JwtAuthenticationFilter.
+
+Fix:
+
+- RegisterCustomerRequest gained a required password field
+- New output ports: UserRepositoryPort, RoleRepositoryPort
+- New adapters: UserJpaAdapter, RoleJpaAdapter (following the same pattern as
+  all other aggregates)
+- RoleJpaRepository gained findByName(String)
+- RegisterCustomerUseCase.registerCustomer() signature extended to accept
+  the raw password
+- CustomerService now: looks up the CUSTOMER role, hashes the password via
+  PasswordEncoder, builds and saves a User with that role, then sets
+  customer.userId from the saved User's id before saving the Customer
+- New migration V4\_\_seed_roles.sql seeds ADMIN and CUSTOMER roles
+  (INSERT IGNORE, safe against pre-existing data)
+
+Password is never persisted or logged in raw form — it exists only in memory
+between the HTTP request and the PasswordEncoder.encode() call.
+
+### 6.18 Testcontainers Singleton Container Pattern
+
+Bug found: BaseIntegrationTest originally declared MySQL and RabbitMQ
+containers as static fields annotated with @Container. Since @Container
+ties container lifecycle to JUnit's callback management, and the field is
+static (shared across all subclasses via inheritance), the first integration
+test class to finish caused JUnit to stop the containers — leaving every
+subsequent test class in the same Maven run connecting to dead containers
+(Connection refused / HikariPool timeout errors).
+
+Fix: containers are now declared as plain static final fields (no @Container
+annotation) and started manually in a static initializer block:
+
+    static { mysql.start(); rabbitMQ.start(); }
+
+This is the Testcontainers-recommended "singleton container" pattern for
+suites with multiple test classes sharing infrastructure. A single MySQL and
+RabbitMQ instance now serves the entire test run, torn down only by Ryuk at
+JVM exit — not by JUnit's per-class afterAll lifecycle. @Transactional on each
+test class remains essential, since the schema is no longer reset between
+classes — rollback isolation is the only thing preventing cross-test data
+leakage.
+
+### 6.19 Cart Price Snapshot Enforcement
+
+Bug found: CartController.addItem() built a CartItem from client input containing
+only productId and quantity, never populating unitPrice, productName, or productSku.
+This violated the price snapshot decision (6.7) and caused a NullPointerException
+whenever an item was persisted, since CartItem.unitPrice is required for the
+CartItemPersistenceMapper's Money -> BigDecimal conversion.
+
+The client legitimately should never supply price, name, or SKU — allowing that
+would let a client dictate its own price, a serious business logic flaw.
+
+Fix: AddToCartUseCase.addToCart() now takes (customerId, productId, quantity)
+instead of a pre-built CartItem. CartService fetches the Product via
+ProductRepositoryPort and builds the CartItem snapshot server-side before
+adding it to the cart. CartController no longer constructs CartItem directly.
+
+### 6.20 Product Update Field Preservation
+
+Bug found: ProductService.updateProduct() saved the incoming Product object
+directly, without first loading the existing record. Since UpdateProductRequest
+has no sku field (sku is immutable by design, per 6.2 DTO decisions), the
+mapper-built Product always had sku = null, causing every update to fail
+the sku NOT NULL constraint.
+
+Fix: updateProduct() now loads the existing Product first, then applies only
+the fields UpdateProductRequest is allowed to change (name, description, price,
+stockQuantity, category, imageUrl), preserving id, sku, status, and
+reservedQuantity from the existing record.
+
+### 6.21 Authentication Entry Point (401 vs 403)
+
+Bug found: SecurityConfig defined no explicit AuthenticationEntryPoint, so
+Spring Security fell back to its default Http403ForbiddenEntryPoint — meaning
+requests with no token at all received 403 Forbidden instead of 401 Unauthorized,
+conflating "not authenticated" with "authenticated but not authorized."
+
+Fix: SecurityConfig now configures exceptionHandling with a custom
+AuthenticationEntryPoint that returns 401 for any unauthenticated request.
+GlobalExceptionHandler also gained a handler for AuthenticationException
+(covering login's BadCredentialsException), returning 401 with a generic
+"Invalid credentials" message instead of falling through to the 500 handler.
+
+Known gap: JWT parsing failures during token refresh (JwtException from
+jsonwebtoken, not a Spring Security AuthenticationException) still fall
+through to the generic 500 handler. Not yet fixed — flagged for future work.
+
+### 6.22 Response DTO Field Completeness
+
+Bug found: OrderResponse was missing a cancelReason field despite
+ShopOrder.cancelReason existing in the domain. Since MapStruct maps by name
+automatically, a field simply absent from the DTO is silently dropped from
+every response with no error — the cancellation reason was persisted correctly
+but never returned to API clients.
+
+Lesson: when adding a domain field, response DTO parity should be checked
+explicitly, since nothing fails at compile or mapping time when a DTO field
+is missing — only a specific consumer noticing the gap.
+
+### 6.23 Spring Boot 4 Module System Migration Notes
+
+Spring Boot 4.0 split the former monolithic spring-boot-autoconfigure and
+spring-boot-test-autoconfigure jars into dozens of small, technology-specific
+modules. This project (on 4.0.5) hit three concrete breaking changes when
+writing controller integration tests:
+
+1. @AutoConfigureMockMvc moved from
+   org.springframework.boot.test.autoconfigure.web.servlet to
+   org.springframework.boot.webmvc.test.autoconfigure, and requires an
+   explicit test dependency: spring-boot-starter-webmvc-test (added to pom.xml,
+   test scope). It is no longer pulled in transitively by spring-boot-starter-test.
+
+2. Jackson 3 is now the default JSON library. The autoconfigured bean is
+   tools.jackson.databind.json.JsonMapper, not com.fasterxml.jackson.databind.ObjectMapper.
+   Both classes coexist on the classpath (Jackson 2 kept for compatibility), which
+   IDEs may present ambiguously. All controller test fields now declare
+   `JsonMapper objectMapper` instead of `ObjectMapper objectMapper` — the API
+   (writeValueAsString, readTree) is unchanged, only the type.
+
+3. org.springframework.test.web.servlet.MockMvc itself did NOT move — false
+   "cannot autowire" warnings seen in IntelliJ for this class were IDE inspection
+   lag, not real errors; verified via successful `mvn test` runs.
+
+Reference: official Spring Boot 4.0 Migration Guide
+(github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.0-Migration-Guide),
+"Module Dependencies" / "Test Code" sections.
+
+Verified fix: full suite (167 tests: 91 unit + 29 persistence integration +
+47 controller integration) passes cleanly in a single `mvn test` run after
+this change.
 
 ## 7. RabbitMQ Configuration
 

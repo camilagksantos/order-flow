@@ -30,6 +30,7 @@ Files:
 - V1\_\_create_schema.sql
 - V2\_\_rename_address_is_default_column.sql
 - V3\_\_add_customer_email_to_shop_order.sql
+- V4\_\_seed_roles.sql
 
 Key Decisions:
 
@@ -39,6 +40,7 @@ Key Decisions:
 - Auto-increment BIGINT for role, user, category, product, customer, address
 - Portugal localisation: NIF instead of CPF, district instead of state, postal_code instead of zip_code, country default PT
 - Cart has no expiration — conscious product decision
+- V4 seeds ADMIN and CUSTOMER roles via INSERT IGNORE — safe to run against a database that may already have role data
 
 ## 3. Application Configuration
 
@@ -172,6 +174,8 @@ Ports:
 - ProcessedEventRepositoryPort — existsById, save
 - EventPublisherPort — publish(DomainEvent)
 - EmailNotificationPort — sendOrderConfirmation, sendOrderShipped, sendOrderCancelled
+- UserRepositoryPort — save, findByEmail
+- RoleRepositoryPort — save, findByName
 
 ## 8. Input Ports (Use Cases)
 
@@ -223,6 +227,10 @@ Key Decisions:
 - ShopOrder.fromCart() converts cart items to order items as price snapshots at checkout time
 - Domain behaviour methods are void — state is mutated directly, then saved via repository
 - CheckoutUseCase.checkout() requires paymentMethod as an explicit parameter — ShopOrder.fromCart() enforces it as a required argument, preventing the payment_method NOT NULL column from ever being left unset
+- CheckoutUseCase.checkout() requires paymentMethod as an explicit parameter — ShopOrder.fromCart() enforces it as a required argument
+- CustomerService.registerCustomer() now creates a User (hashed password, CUSTOMER role) before saving the Customer, using new UserRepositoryPort and RoleRepositoryPort
+- CartService now injects ProductRepositoryPort to build CartItem price snapshots server-side, closing a gap where the client-facing DTO never carried price/name/sku (correctly), but nothing populated them either
+- ProductService.updateProduct() loads the existing Product first and applies only client-editable fields, preserving sku, status, and reservedQuantity
 
 ## 10. JPA Repositories
 
@@ -289,6 +297,8 @@ Adapters:
 - PaymentJpaAdapter — implements PaymentRepositoryPort
 - OutboxEventJpaAdapter — implements OutboxEventRepositoryPort
 - ProcessedEventJpaAdapter — implements ProcessedEventRepositoryPort
+- UserJpaAdapter — implements UserRepositoryPort
+- RoleJpaAdapter — implements RoleRepositoryPort
 
 ## 13. DTOs
 
@@ -300,7 +310,7 @@ Request DTOs (application/dto/request/):
 - CreateCategoryRequest — name
 - CreateProductRequest — name, description, sku, price, stockQuantity, categoryId, imageUrl
 - UpdateProductRequest — name, description, price, stockQuantity, categoryId, imageUrl (no sku — immutable after creation)
-- RegisterCustomerRequest — name, email, nif, phone
+- RegisterCustomerRequest — name, email, nif, phone, password
 - CreateAddressRequest — street, number, complement, neighborhood, city, district, postalCode
 - AddToCartRequest — productId, quantity
 - CheckoutRequest — idempotencyKey, addressId, paymentMethod
@@ -380,6 +390,10 @@ Private routes — CUSTOMER:
 Private routes — ADMIN:
 
 - POST/PUT/DELETE products, POST categories, PATCH order status, GET reports
+
+Key Decisions:
+
+- CartController.addItem() delegates snapshot construction to CartService — no longer builds CartItem directly
 
 ## 16. RabbitMQ Configuration
 
@@ -590,6 +604,11 @@ Tests:
 - ProductFlowIntegrationTest — 5 tests: create category and product, find by id, find by sku, find all, reserve and release stock
 - CustomerFlowIntegrationTest — 5 tests: register customer, find by id, find by email, find by nif, return empty when not found
 - CartFlowIntegrationTest — 7 tests: create cart, create with items, calculate total, find by id, find active by customer id, remove item, convert
+- ProductFlowIntegrationTest — 5 tests: create category and product, find by id, find by sku, find all, reserve and release stock
+- CustomerFlowIntegrationTest — 5 tests: register customer, find by id, find by email, find by nif, return empty when not found
+- CartFlowIntegrationTest — 7 tests: create cart, create with items, calculate total, find by id, find active by customer id, remove item, convert
+- OrderFlowIntegrationTest — 8 tests: create order, create with items, find by id, find by order number, find by idempotency key, find by customer id, full lifecycle transition, cancel
+- PaymentFlowIntegrationTest — 4 tests: create payment, find by order id, approve, decline and increment attempt count
 
 Key Decisions:
 
@@ -599,14 +618,42 @@ Key Decisions:
 - spring-boot-starter-flyway required in Spring Boot 4.x — Flyway no longer auto-configures without explicit starter
 - baseline-on-migrate: true + baseline-version: 0 in application-test.yaml — handles empty schema on fresh container
 - Each integration test persists a UserEntity via UserJpaRepository before creating a Customer — customer.user_id is a NOT NULL UNIQUE FK to the user table
-- CartFlowIntegrationTest reuses a persistTestCustomer() helper chaining User -> Customer creation, same pattern as CustomerFlowIntegrationTest
-- shouldRemoveItemFromCart validates orphanRemoval behavior on CartEntity.items, indirectly confirming the @AfterMapping back-reference fix works correctly
+- Containers declared as plain static fields with manual .start() in a static block, not @Container — prevents JUnit from tearing down shared containers between test classes (singleton container pattern)
 - OrderFlowIntegrationTest and PaymentFlowIntegrationTest reuse the persistTestCustomer() helper, extending the dependency chain to User -> Customer -> ShopOrder -> Payment
 - PaymentEntity.id is a manually-generated UUID String (no @GeneratedValue), consistent with Cart, CartItem, ShopOrder, OrderItem
+- Full suite: 120 tests passing (91 unit + 29 integration) after the singleton container fix
+
+## 24. Controller Integration Tests
+
+Located in src/test/java/com/camilagksantos/orderflow/infrastructure/adapter/input/web/.
+Uses @AutoConfigureMockMvc + real JWT tokens generated via JwtService — not
+@WithMockUser — to test the full security filter chain end-to-end. Extends
+BaseIntegrationTest (Testcontainers singleton pattern, see 23).
+
+Tests:
+
+- CategoryControllerTest — 6 tests: create as admin, reject as customer, reject without token, reject blank name, find all, find by id
+- ProductControllerTest — 13 tests: create as admin, reject as customer, reject invalid price, find all/by id/by sku/by category without auth, not found, update as admin, reject update as customer, delete as admin, reject delete as customer
+- CustomerControllerTest — 6 tests: register without auth, reject invalid email, reject invalid nif, reject duplicate email, reject find without token, find with valid token, not found
+- CartControllerTest — 6 tests: reject add without token, add item, reject invalid quantity, find cart, remove item, checkout
+- OrderControllerTest — 9 tests: reject find without token, find by id/order number/customer id, not found, update status as admin, reject update as customer, cancel, reject cancel with blank reason
+- ReportControllerTest — 3 tests: generate as admin, reject as customer, reject without token
+- AuthControllerTest — 3 tests: login successfully, reject blank password, refresh token successfully
+
+Key Decisions:
+
+- Real JWT tokens used (not @WithMockUser) to validate the actual JwtAuthenticationFilter and JwtService end-to-end, not just Spring Security's authorization layer
+- Each test class creates its own User + role via UserJpaRepository/RoleJpaRepository, mirroring the persistence flow tests' pattern
+- spring-boot-starter-webmvc-test added as an explicit test dependency — required in Spring Boot 4.0's modular test infrastructure, no longer pulled transitively (see Context Document 6.23)
+- Test fields use tools.jackson.databind.json.JsonMapper instead of com.fasterxml.jackson.databind.ObjectMapper — Jackson 3 is Spring Boot 4's default (see 6.23)
+- Full suite: 167 tests passing (91 unit + 29 persistence integration + 47 controller integration)
+
+## Known Issues
+
+- JWT refresh with a malformed/invalid token still returns 500 instead of 401 — JwtException isn't caught by GlobalExceptionHandler's AuthenticationException handler (see Context Document 6.21). Not yet fixed.
 
 ## In Progress
 
-- Controller integration tests
 - Excel report generation (Apache POI)
 - Unit tests — frontend
 - Integration tests — frontend (Cypress)
@@ -650,7 +697,16 @@ Key Decisions:
 - Fixed CustomerPersistenceMapper bug where @Mapping(target = "user", ignore = true) silently persisted user_id as NULL despite Customer.userId being set in the domain object — replaced with explicit default conversion methods (Long <-> UserEntity), following the same pattern used for Money, Email and NIF
 - Fixed the same FK-reference bug across AddressPersistenceMapper (via CustomerPersistenceMapper), ShopOrderPersistenceMapper, and PaymentPersistenceMapper — same root cause and same fix pattern as the Customer/Cart mappers (see Context Document 6.15)
 - Fixed missing paymentMethod propagation in the checkout flow — CheckoutRequest, CheckoutUseCase, OrderService, and ShopOrder.fromCart() all lacked it, causing shop_order.payment_method (NOT NULL) to persist as null; fixed by adding it as a required parameter through the full chain from request DTO to domain factory (see Context Document 6.16)
+- Fixed missing paymentMethod propagation in the checkout flow — CheckoutRequest, CheckoutUseCase, OrderService, and ShopOrder.fromCart() all lacked it (see Context Document 6.16)
+- Fixed customer registration never creating a User/password — added UserRepositoryPort, RoleRepositoryPort and their adapters, closing a hexagonal architecture gap where User/Role bypassed the port pattern entirely (see Context Document 6.17)
+- Added V4\_\_seed_roles.sql to seed ADMIN and CUSTOMER roles
+- Fixed Testcontainers container lifecycle bug causing dead connections between test classes — switched from @Container to manually-started static singleton containers (see Context Document 6.18)
+- Fixed CartService never building a price/name/sku snapshot for new CartItems — client input correctly excluded these fields, but nothing populated them server-side either, causing NullPointerException on persistence (see Context Document 6.19)
+- Fixed ProductService.updateProduct() overwriting sku with null on every update — now loads existing Product and applies only client-editable fields (see Context Document 6.20)
+- Added explicit AuthenticationEntryPoint returning 401 for unauthenticated requests, replacing Spring Security's default 403 fallback; added AuthenticationException handler to GlobalExceptionHandler (see Context Document 6.21)
+- Fixed OrderResponse missing cancelReason field — present in domain and persisted correctly, but silently absent from every API response (see Context Document 6.22)
+- Resolved three Spring Boot 4.0 module-system breaking changes encountered while writing controller tests: AutoConfigureMockMvc package/dependency change, Jackson 3 JsonMapper replacing ObjectMapper as the autoconfigured bean, and a false-positive IDE warning for MockMvc (see Context Document 6.23)
 
 ## Known Issues / Blockers
 
-None.
+- JWT refresh with an invalid/malformed token returns 500 instead of 401 (see Context Document 6.21 and Progress section 24)
