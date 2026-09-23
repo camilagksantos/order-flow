@@ -21,12 +21,15 @@ public class ProductJpaAdapter implements ProductRepositoryPort {
     @Override
     public Product save(Product product) {
         ProductEntity entity = productPersistenceMapper.toEntity(product);
-        return productPersistenceMapper.toDomain(productJpaRepository.save(entity));
+        ProductEntity saved = productJpaRepository.save(entity);
+        return productPersistenceMapper.toDomain(
+                productJpaRepository.findByIdWithCategory(saved.getId()).orElseThrow()
+        );
     }
 
     @Override
     public Optional<Product> findById(Long id) {
-        return productJpaRepository.findById(id)
+        return productJpaRepository.findByIdWithCategory(id)
                 .map(productPersistenceMapper::toDomain);
     }
 

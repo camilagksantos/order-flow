@@ -245,8 +245,10 @@ Repositories:
 - ProductJpaRepository — findBySku, findByCategoryId
 - CustomerJpaRepository — findByEmail, findByNif
 - AddressJpaRepository — findByCustomerId
-- CartJpaRepository — findByCustomerIdAndStatus
-- ShopOrderJpaRepository — findByOrderNumber, findByIdempotencyKey, findByCustomerId
+- CartJpaRepository — findByCustomerIdAndStatus (JOIN FETCH items), findByIdWithItems
+- ProductJpaRepository — findBySku, findByCategoryId, findByIdWithCategory (JOIN FETCH category)
+- CustomerJpaRepository — findByEmail, findByNif, findByIdWithAddresses (JOIN FETCH addresses)
+- ShopOrderJpaRepository — findByOrderNumber, findByIdempotencyKey, findByCustomerId, findByIdWithItems (JOIN FETCH items)
 - PaymentJpaRepository — findByOrderId
 - OutboxEventJpaRepository — findByStatus
 - ProcessedEventJpaRepository — JpaRepository<ProcessedEventEntity, String>
@@ -299,6 +301,18 @@ Adapters:
 - ProcessedEventJpaAdapter — implements ProcessedEventRepositoryPort
 - UserJpaAdapter — implements UserRepositoryPort
 - RoleJpaAdapter — implements RoleRepositoryPort
+
+Key Decisions:
+
+- OrderJpaAdapter, ProductJpaAdapter, CustomerJpaAdapter, CartJpaAdapter route both
+  findById() and save() through JOIN FETCH repository queries instead of plain
+  findById() — prevents LazyInitializationException on their LAZY relationships
+  (items, category, addresses) when the adapter is called outside an open
+  Hibernate session, such as from a RabbitMQ consumer thread (see Context
+  Document 6.26)
+- save() on these four adapters performs an extra SELECT after INSERT/UPDATE to
+  reload the entity with its LAZY relationship populated before mapping to
+  domain — accepted performance trade-off for correctness
 
 ## 13. DTOs
 
@@ -421,6 +435,12 @@ Key Decisions:
 - JacksonJsonMessageConverter used instead of deprecated Jackson2JsonMessageConverter — Spring AMQP 4.0 Jackson 3 support
 - All queues configured with x-dead-letter-exchange — failed messages routed automatically to DLQ
 - RabbitTemplate configured with JacksonJsonMessageConverter for automatic JSON serialization
+- RabbitAdmin bean added explicitly — Spring Boot 4 only autoconfigures AmqpAdmin
+  when spring.rabbitmq.dynamic=true, which this project does not set (see Context
+  Document 6.25)
+- SimpleRabbitListenerContainerFactory configured with setDefaultRequeueRejected(false)
+  — prevents infinite redelivery loops for permanently-failing messages, routing
+  them to the DLX/DLQ instead (see Context Document 6.25)
 
 ## 17. Messaging
 
@@ -429,7 +449,10 @@ Located in infrastructure/adapter/output/messaging/ and infrastructure/adapter/i
 Publisher:
 
 - RabbitMQEventPublisher — implements EventPublisherPort, publishes events to orderflow.orders exchange via routing key
-- OutboxEventScheduler — @Scheduled(fixedDelay = 5000), reads PENDING outbox events and publishes to RabbitMQ, marks as SENT or FAILED
+- OutboxEventScheduler — @Scheduled(fixedDelay = 5000), reads PENDING outbox events
+  and publishes to RabbitMQ, marks as SENT or FAILED. Publishes the full OutboxEvent
+  object (fixed from a bug that published only event.payload() — see Context
+  Document 6.24)
 
 Consumers (infrastructure/adapter/input/messaging/):
 
@@ -437,6 +460,12 @@ Consumers (infrastructure/adapter/input/messaging/):
 - OrderPaidConsumer — confirms sale, decrements stockQuantity and reservedQuantity
 - OrderCancelledConsumer — releases reserved stock
 - OrderShippedConsumer — registers event as processed
+
+Note: RabbitMQEventPublisher/EventPublisherPort exist but are not called anywhere
+in the codebase — OrderService.checkout() persists the OutboxEvent directly via
+OutboxEventRepositoryPort, bypassing this publisher entirely. Likely dead code
+from an earlier design iteration (direct publish, before the Outbox pattern was
+adopted); not yet removed.
 
 All consumers check processed_event table before processing — idempotency guarantee.
 
@@ -604,9 +633,6 @@ Tests:
 - ProductFlowIntegrationTest — 5 tests: create category and product, find by id, find by sku, find all, reserve and release stock
 - CustomerFlowIntegrationTest — 5 tests: register customer, find by id, find by email, find by nif, return empty when not found
 - CartFlowIntegrationTest — 7 tests: create cart, create with items, calculate total, find by id, find active by customer id, remove item, convert
-- ProductFlowIntegrationTest — 5 tests: create category and product, find by id, find by sku, find all, reserve and release stock
-- CustomerFlowIntegrationTest — 5 tests: register customer, find by id, find by email, find by nif, return empty when not found
-- CartFlowIntegrationTest — 7 tests: create cart, create with items, calculate total, find by id, find active by customer id, remove item, convert
 - OrderFlowIntegrationTest — 8 tests: create order, create with items, find by id, find by order number, find by idempotency key, find by customer id, full lifecycle transition, cancel
 - PaymentFlowIntegrationTest — 4 tests: create payment, find by order id, approve, decline and increment attempt count
 
@@ -648,9 +674,39 @@ Key Decisions:
 - Test fields use tools.jackson.databind.json.JsonMapper instead of com.fasterxml.jackson.databind.ObjectMapper — Jackson 3 is Spring Boot 4's default (see 6.23)
 - Full suite: 167 tests passing (91 unit + 29 persistence integration + 47 controller integration)
 
+## 25. Messaging Integration Tests
+
+Located in src/test/java/com/camilagksantos/orderflow/infrastructure/adapter/output/messaging/.
+Extends BaseIntegrationTest but does NOT use @Transactional — required so that
+data committed by the test thread is visible to the RabbitMQ consumer thread,
+which uses its own database session (see Context Document 6.26). Cleanup is
+done manually via @AfterEach, deleting created records in FK-safe order.
+
+Tests:
+
+- MessagingFlowIntegrationTest — 6 tests: reserve stock on ORDER_CREATED, confirm
+  sale on ORDER_PAID, release stock on ORDER_CANCELLED, mark event processed on
+  ORDER_SHIPPED, ignore duplicate event, mark outbox event as SENT after publishing
+
+Key Decisions:
+
+- outboxEventScheduler.processOutboxEvents() is called directly in tests instead
+  of waiting for the real @Scheduled trigger — same behavior, no dependency on
+  wall-clock timing
+- Awaitility used to poll assertions with a timeout, since consumer processing
+  happens asynchronously on a separate thread
+- RabbitAdmin.purgeQueue() called in @BeforeEach for all four order queues —
+  prevents leftover/redelivered messages from a previous test polluting the next
+- Assertions read via the plain JpaRepository (not the JpaAdapter) to avoid
+  triggering the same LazyInitializationException risk being tested for
+- Full suite: 173 tests passing (91 unit + 29 persistence integration +
+  47 controller integration + 6 messaging integration)
+
 ## Known Issues
 
 - JWT refresh with a malformed/invalid token still returns 500 instead of 401 — JwtException isn't caught by GlobalExceptionHandler's AuthenticationException handler (see Context Document 6.21). Not yet fixed.
+- Dead Letter Queue (orderflow.dlx / orderflow.dead-letter.queue) has been configured since the initial schema but is never exercised by any test — no test confirms a permanently-failing message actually lands there
+- No test currently forces findById()/save() on the four corrected adapters (Order, Product, Customer, Cart) to run outside @Transactional except via the messaging consumers; a future regression in another caller path would not be caught by Flow/Controller tests alone
 
 ## In Progress
 
@@ -706,6 +762,9 @@ Key Decisions:
 - Added explicit AuthenticationEntryPoint returning 401 for unauthenticated requests, replacing Spring Security's default 403 fallback; added AuthenticationException handler to GlobalExceptionHandler (see Context Document 6.21)
 - Fixed OrderResponse missing cancelReason field — present in domain and persisted correctly, but silently absent from every API response (see Context Document 6.22)
 - Resolved three Spring Boot 4.0 module-system breaking changes encountered while writing controller tests: AutoConfigureMockMvc package/dependency change, Jackson 3 JsonMapper replacing ObjectMapper as the autoconfigured bean, and a false-positive IDE warning for MockMvc (see Context Document 6.23)
+- Fixed OutboxEventScheduler publishing only event.payload() instead of the full OutboxEvent object — every RabbitMQ consumer expected the complete record and would have failed message conversion in production (see Context Document 6.24)
+- Added explicit RabbitAdmin bean and disabled default message requeue-on-failure via SimpleRabbitListenerContainerFactory — prevents infinite redelivery loops and routes permanently-failing messages to the existing but previously unused DLQ (see Context Document 6.25)
+- Fixed LazyInitializationException across findById() and save() on OrderJpaAdapter, ProductJpaAdapter, CustomerJpaAdapter, and CartJpaAdapter — added JOIN FETCH repository queries for their LAZY relationships (items, category, addresses); exposed only once MessagingFlowIntegrationTest ran adapters outside @Transactional (see Context Document 6.26)
 
 ## Known Issues / Blockers
 

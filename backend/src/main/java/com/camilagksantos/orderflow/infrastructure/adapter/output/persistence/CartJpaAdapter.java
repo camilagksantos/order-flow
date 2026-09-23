@@ -21,12 +21,15 @@ public class CartJpaAdapter implements CartRepositoryPort {
     @Override
     public Cart save(Cart cart) {
         CartEntity entity = cartPersistenceMapper.toEntity(cart);
-        return cartPersistenceMapper.toDomain(cartJpaRepository.save(entity));
+        CartEntity saved = cartJpaRepository.save(entity);
+        return cartPersistenceMapper.toDomain(
+                cartJpaRepository.findByIdWithItems(saved.getId()).orElseThrow()
+        );
     }
 
     @Override
     public Optional<Cart> findById(String id) {
-        return cartJpaRepository.findById(id)
+        return cartJpaRepository.findByIdWithItems(id)
                 .map(cartPersistenceMapper::toDomain);
     }
 

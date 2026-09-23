@@ -21,12 +21,15 @@ public class OrderJpaAdapter implements OrderRepositoryPort {
     @Override
     public ShopOrder save(ShopOrder order) {
         ShopOrderEntity entity = shopOrderPersistenceMapper.toEntity(order);
-        return shopOrderPersistenceMapper.toDomain(shopOrderJpaRepository.save(entity));
+        ShopOrderEntity saved = shopOrderJpaRepository.save(entity);
+        return shopOrderPersistenceMapper.toDomain(
+                shopOrderJpaRepository.findByIdWithItems(saved.getId()).orElseThrow()
+        );
     }
 
     @Override
     public Optional<ShopOrder> findById(String id) {
-        return shopOrderJpaRepository.findById(id)
+        return shopOrderJpaRepository.findByIdWithItems(id)
                 .map(shopOrderPersistenceMapper::toDomain);
     }
 

@@ -29,7 +29,7 @@ public class OutboxEventScheduler {
             rabbitTemplate.convertAndSend(
                     RabbitMQConfig.ORDERS_EXCHANGE,
                     resolveRoutingKey(event.eventType()),
-                    event.payload()
+                    event
             );
             outboxEventRepositoryPort.updateStatus(event.id(), OutboxEventStatus.SENT);
             log.info("Outbox event published: {} - {}", event.eventType(), event.id());

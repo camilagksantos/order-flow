@@ -506,6 +506,77 @@ Verified fix: full suite (167 tests: 91 unit + 29 persistence integration +
 47 controller integration) passes cleanly in a single `mvn test` run after
 this change.
 
+### 6.24 Outbox Event Payload Mismatch
+
+Bug found: OutboxEventScheduler.processEvent() published event.payload() (a
+raw String, e.g. an order ID) instead of the full OutboxEvent object, while
+all four RabbitMQ consumers declared their @RabbitListener method signature
+as consume(OutboxEvent event) — expecting the complete record (id, eventType,
+payload, status, createdAt). Every message conversion would have failed in
+production; this was never caught because no test exercised the scheduler and
+a consumer together before MessagingFlowIntegrationTest was written.
+
+Fix: OutboxEventScheduler now publishes the full event object via
+rabbitTemplate.convertAndSend(exchange, routingKey, event) instead of
+event.payload().
+
+### 6.25 RabbitMQ Consumer Failure Handling and RabbitAdmin
+
+Two related fixes to RabbitMQConfig:
+
+1. RabbitAdmin bean added explicitly. Spring Boot 4 only autoconfigures
+   AmqpAdmin when spring.rabbitmq.dynamic=true is set; this project does not
+   set that property, so RabbitAdmin was never available for injection
+   (e.g. for queue purging in tests). A RabbitAdmin @Bean was added, taking
+   ConnectionFactory as its only dependency.
+
+2. SimpleRabbitListenerContainerFactory bean added with
+   setDefaultRequeueRejected(false). By default, Spring AMQP requeues a
+   message whose listener throws an exception, causing an infinite
+   redelivery loop for any message that fails permanently (e.g. referencing
+   an order that was later deleted) — starving the queue and flooding logs,
+   despite a Dead Letter Queue already being configured and unused. With
+   requeue disabled, failed messages now route to the DLX/DLQ as originally
+   intended.
+
+### 6.26 LazyInitializationException Across findById() and save()
+
+Bug found: MessagingFlowIntegrationTest was the first test suite to exercise
+persistence adapters outside of @Transactional (necessary — see 6.18's note
+that @Transactional would hide dead RabbitMQ connections from a separate
+consumer thread). This exposed a structural bug present since the mappers
+were written: every JPA entity with a LAZY relationship (ShopOrderEntity.items,
+ProductEntity.category, CustomerEntity.addresses, CartEntity.items) throws
+LazyInitializationException when its persistence mapper's toDomain() accesses
+that relationship after the originating Hibernate session has closed. Flow
+and Controller tests never caught this because @Transactional kept a session
+open for the whole test.
+
+The bug existed in two places per aggregate:
+- findById(): plain JpaRepository.findById() returns an entity with LAZY
+  proxies; mapping it to domain immediately after touches the proxy with no
+  session.
+- save(): the entity returned by JpaRepository.save() suffers the same
+  problem when mapped back to domain for the return value.
+
+Fix: added explicit JOIN FETCH repository queries and route both findById()
+and save() through them:
+- ShopOrderJpaRepository.findByIdWithItems() — OrderJpaAdapter
+- ProductJpaRepository.findByIdWithCategory() — ProductJpaAdapter
+- CustomerJpaRepository.findByIdWithAddresses() — CustomerJpaAdapter
+- CartJpaRepository.findByIdWithItems() (and findByCustomerIdAndStatus(),
+  rewritten with the same fetch) — CartJpaAdapter
+
+save() now performs an extra SELECT after INSERT/UPDATE to reload the entity
+with its LAZY relationship populated before mapping to domain — an accepted
+performance trade-off for correctness. OrderItemPersistenceMapper and
+PaymentPersistenceMapper were not affected: both only read the parent's .id
+via property navigation, which MapStruct resolves without touching the proxy.
+
+Known gap: no test currently forces findById()/save() to run outside
+@Transactional except via the messaging consumers. A future regression in
+another caller path would not be caught by Flow/Controller tests alone.
+
 ## 7. RabbitMQ Configuration
 
 ### Exchanges
@@ -554,13 +625,15 @@ Allows inspection and replay without data loss.
 
 ## 9. Testing Strategy
 
-| Layer                | Type        | Tool              | Target |
-| -------------------- | ----------- | ----------------- | ------ |
-| Domain models        | Unit        | JUnit 5           | 90%+   |
-| Application services | Unit        | JUnit 5 + Mockito | 85%+   |
-| Controllers          | Integration | @SpringBootTest   | 80%+   |
-| RabbitMQ consumers   | Integration | Testcontainers    | 80%+   |
-| Repositories         | Integration | Testcontainers    | 80%+   |
+## 9. Testing Strategy
+
+| Layer                | Type        | Tool              | Target | Covered By                              |
+| --------------------- | ----------- | ----------------- | ------ | ---------------------------------------- |
+| Domain models         | Unit        | JUnit 5           | 90%+   | 53 tests across domain/*                 |
+| Application services  | Unit        | JUnit 5 + Mockito | 85%+   | Service test suites                      |
+| Controllers           | Integration | @SpringBootTest   | 80%+   | 47 tests across 7 ControllerTest classes |
+| RabbitMQ consumers    | Integration | Testcontainers    | 80%+   | MessagingFlowIntegrationTest (6 tests)   |
+| Repositories          | Integration | Testcontainers    | 80%+   | 5 *FlowIntegrationTest classes (29 tests)|
 
 ## 10. Database Indexes
 

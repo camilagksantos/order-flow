@@ -20,12 +20,15 @@ public class CustomerJpaAdapter implements CustomerRepositoryPort {
     @Override
     public Customer save(Customer customer) {
         CustomerEntity entity = customerPersistenceMapper.toEntity(customer);
-        return customerPersistenceMapper.toDomain(customerJpaRepository.save(entity));
+        CustomerEntity saved = customerJpaRepository.save(entity);
+        return customerPersistenceMapper.toDomain(
+                customerJpaRepository.findByIdWithAddresses(saved.getId()).orElseThrow()
+        );
     }
 
     @Override
     public Optional<Customer> findById(Long id) {
-        return customerJpaRepository.findById(id)
+        return customerJpaRepository.findByIdWithAddresses(id)
                 .map(customerPersistenceMapper::toDomain);
     }
 
