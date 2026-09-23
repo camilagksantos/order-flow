@@ -40,8 +40,8 @@ public class RabbitMQConfig {
     }
 
     @Bean
-    public DirectExchange deadLetterExchange() {
-        return ExchangeBuilder.directExchange(DLX_EXCHANGE).durable(true).build();
+    public FanoutExchange deadLetterExchange() {
+        return ExchangeBuilder.fanoutExchange(DLX_EXCHANGE).durable(true).build();
     }
 
     @Bean
@@ -143,5 +143,11 @@ public class RabbitMQConfig {
         factory.setMessageConverter(messageConverter());
         factory.setDefaultRequeueRejected(false);
         return factory;
+    }
+
+    @Bean
+    public Binding deadLetterBinding() {
+        return BindingBuilder.bind(deadLetterQueue())
+                .to(deadLetterExchange());
     }
 }

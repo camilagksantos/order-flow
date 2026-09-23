@@ -33,12 +33,14 @@ import com.camilagksantos.orderflow.infrastructure.persistence.repository.UserJp
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -284,5 +286,20 @@ class MessagingFlowIntegrationTest extends BaseIntegrationTest {
             List<OutboxEvent> pending = outboxEventRepositoryPort.findByStatus(OutboxEventStatus.PENDING);
             assertThat(pending).noneMatch(e -> e.id().equals(event.id()));
         });
+    }
+
+    @Test
+    void shouldRouteFailedMessageToDeadLetterQueue() {
+        OutboxEvent event = persistPendingEvent("ORDER_CREATED", "non-existent-order-id");
+
+        outboxEventScheduler.processOutboxEvents();
+
+        await().atMost(5, TimeUnit.SECONDS).untilAsserted(() -> {
+            Properties props = rabbitAdmin.getQueueProperties(RabbitMQConfig.DEAD_LETTER_QUEUE);
+            long messageCount = (long) props.get(RabbitAdmin.QUEUE_MESSAGE_COUNT);
+            assertThat(messageCount).isGreaterThan(0);
+        });
+
+        rabbitAdmin.purgeQueue(RabbitMQConfig.DEAD_LETTER_QUEUE, false);
     }
 }

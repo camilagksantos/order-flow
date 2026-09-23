@@ -454,13 +454,20 @@ conflating "not authenticated" with "authenticated but not authorized."
 
 Fix: SecurityConfig now configures exceptionHandling with a custom
 AuthenticationEntryPoint that returns 401 for any unauthenticated request.
-GlobalExceptionHandler also gained a handler for AuthenticationException
-(covering login's BadCredentialsException), returning 401 with a generic
-"Invalid credentials" message instead of falling through to the 500 handler.
 
-Known gap: JWT parsing failures during token refresh (JwtException from
-jsonwebtoken, not a Spring Security AuthenticationException) still fall
-through to the generic 500 handler. Not yet fixed — flagged for future work.
+A second, more serious bug was found in the same area: GlobalExceptionHandler's
+AuthenticationException handler imported javax.naming.AuthenticationException
+(the JNDI/LDAP exception) instead of org.springframework.security.core.AuthenticationException.
+Since BadCredentialsException extends the Spring Security class, not the JNDI
+one, the handler never matched anything — every wrong-password login attempt
+fell through to the generic 500 handler despite the handler appearing to
+exist. Fixed by correcting the import.
+
+A JwtException handler was also added, covering token refresh with a malformed
+or invalid token — previously uncaught, also falling through to 500.
+
+Both paths are now covered by AuthControllerTest (shouldRejectLoginWithWrongPassword,
+shouldRejectRefreshWithInvalidToken).
 
 ### 6.22 Response DTO Field Completeness
 
@@ -553,6 +560,7 @@ and Controller tests never caught this because @Transactional kept a session
 open for the whole test.
 
 The bug existed in two places per aggregate:
+
 - findById(): plain JpaRepository.findById() returns an entity with LAZY
   proxies; mapping it to domain immediately after touches the proxy with no
   session.
@@ -561,6 +569,7 @@ The bug existed in two places per aggregate:
 
 Fix: added explicit JOIN FETCH repository queries and route both findById()
 and save() through them:
+
 - ShopOrderJpaRepository.findByIdWithItems() — OrderJpaAdapter
 - ProductJpaRepository.findByIdWithCategory() — ProductJpaAdapter
 - CustomerJpaRepository.findByIdWithAddresses() — CustomerJpaAdapter
@@ -576,6 +585,37 @@ via property navigation, which MapStruct resolves without touching the proxy.
 Known gap: no test currently forces findById()/save() to run outside
 @Transactional except via the messaging consumers. A future regression in
 another caller path would not be caught by Flow/Controller tests alone.
+
+### 6.27 Dead Letter Queue Binding Missing
+
+Bug found: RabbitMQConfig declared deadLetterExchange() and deadLetterQueue()
+beans, and every order queue was configured with x-dead-letter-exchange
+pointing to it, but no Binding connected the DLX to the DLQ. Since 6.25's
+defaultRequeueRejected(false) fix now routes failed messages to this exchange
+instead of requeuing them forever, any message that failed permanently was
+being silently discarded by RabbitMQ — published to an exchange with no
+bound queue — rather than landing in the DLQ as the architecture intended.
+
+A second detail mattered here: deadLetterExchange() was a DirectExchange,
+which requires matching routing keys. Messages dead-lettered by RabbitMQ
+retain their original routing key (order.created, order.paid, etc.), so a
+direct binding would have needed one entry per source queue's routing key.
+Changed deadLetterExchange() to a FanoutExchange instead — it ignores routing
+keys entirely, so a single unconditional binding captures dead-lettered
+messages regardless of which queue they originated from.
+
+Fix: deadLetterExchange() changed from DirectExchange to FanoutExchange; a
+deadLetterBinding() bean added connecting deadLetterQueue() to it.
+
+Covered by MessagingFlowIntegrationTest.shouldRouteFailedMessageToDeadLetterQueue
+— publishes an event referencing a non-existent order, confirms the message
+count on orderflow.dead-letter.queue increases via RabbitAdmin.getQueueProperties().
+
+Note: no test forces findById()/save() on the four LAZY-relationship-corrected
+adapters (6.26) to run outside @Transactional except via messaging consumers.
+Considered and accepted as a documentation-level mitigation rather than a
+test — the risk is a future unknown caller path, which no test written today
+can pre-emptively cover; code review awareness of 6.26 is the intended guard.
 
 ## 7. RabbitMQ Configuration
 
@@ -627,13 +667,13 @@ Allows inspection and replay without data loss.
 
 ## 9. Testing Strategy
 
-| Layer                | Type        | Tool              | Target | Covered By                              |
-| --------------------- | ----------- | ----------------- | ------ | ---------------------------------------- |
-| Domain models         | Unit        | JUnit 5           | 90%+   | 53 tests across domain/*                 |
-| Application services  | Unit        | JUnit 5 + Mockito | 85%+   | Service test suites                      |
-| Controllers           | Integration | @SpringBootTest   | 80%+   | 47 tests across 7 ControllerTest classes |
-| RabbitMQ consumers    | Integration | Testcontainers    | 80%+   | MessagingFlowIntegrationTest (6 tests)   |
-| Repositories          | Integration | Testcontainers    | 80%+   | 5 *FlowIntegrationTest classes (29 tests)|
+| Layer                | Type        | Tool              | Target | Covered By                                 |
+| -------------------- | ----------- | ----------------- | ------ | ------------------------------------------ |
+| Domain models        | Unit        | JUnit 5           | 90%+   | 53 tests across domain/\*                  |
+| Application services | Unit        | JUnit 5 + Mockito | 85%+   | Service test suites                        |
+| Controllers          | Integration | @SpringBootTest   | 80%+   | 47 tests across 7 ControllerTest classes   |
+| RabbitMQ consumers   | Integration | Testcontainers    | 80%+   | MessagingFlowIntegrationTest (6 tests)     |
+| Repositories         | Integration | Testcontainers    | 80%+   | 5 \*FlowIntegrationTest classes (29 tests) |
 
 ## 10. Database Indexes
 

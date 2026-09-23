@@ -12,7 +12,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import javax.naming.AuthenticationException;
+import org.springframework.security.core.AuthenticationException;
 import java.time.LocalDateTime;
 import java.util.stream.Collectors;
 
@@ -76,6 +76,18 @@ public class GlobalExceptionHandler {
                         HttpStatus.INTERNAL_SERVER_ERROR.value(),
                         HttpStatus.INTERNAL_SERVER_ERROR.getReasonPhrase(),
                         "An unexpected error occurred",
+                        request.getRequestURI()));
+    }
+
+    @ExceptionHandler(io.jsonwebtoken.JwtException.class)
+    public ResponseEntity<ErrorResponse> handleJwtException(
+            io.jsonwebtoken.JwtException ex, HttpServletRequest request) {
+        log.warn("JWT validation failed: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(buildError(
+                        HttpStatus.UNAUTHORIZED.value(),
+                        HttpStatus.UNAUTHORIZED.getReasonPhrase(),
+                        "Invalid or expired token",
                         request.getRequestURI()));
     }
 

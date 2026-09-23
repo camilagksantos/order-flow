@@ -419,7 +419,7 @@ Exchanges:
 
 - orderflow.orders (TopicExchange) — order lifecycle events
 - orderflow.notifications (FanoutExchange) — email notifications
-- orderflow.dlx (DirectExchange) — dead letter routing
+- orderflow.dlx (FanoutExchange) — dead letter routing, changed from DirectExchange to bypass routing-key matching (see Context Document 6.27)
 
 Queues (all durable with x-dead-letter-exchange):
 
@@ -441,6 +441,7 @@ Key Decisions:
 - SimpleRabbitListenerContainerFactory configured with setDefaultRequeueRejected(false)
   — prevents infinite redelivery loops for permanently-failing messages, routing
   them to the DLX/DLQ instead (see Context Document 6.25)
+- deadLetterQueue() now bound to deadLetterExchange() via an unconditional FanoutExchange binding — previously unbound, silently dropping every dead-lettered message (see Context Document 6.27)
 
 ## 17. Messaging
 
@@ -684,9 +685,7 @@ done manually via @AfterEach, deleting created records in FK-safe order.
 
 Tests:
 
-- MessagingFlowIntegrationTest — 6 tests: reserve stock on ORDER_CREATED, confirm
-  sale on ORDER_PAID, release stock on ORDER_CANCELLED, mark event processed on
-  ORDER_SHIPPED, ignore duplicate event, mark outbox event as SENT after publishing
+- MessagingFlowIntegrationTest — 7 tests: reserve stock on ORDER_CREATED, confirm sale on ORDER_PAID, release stock on ORDER_CANCELLED, mark event processed on ORDER_SHIPPED, ignore duplicate event, mark outbox event as SENT after publishing, route permanently-failing message to Dead Letter Queue
 
 Key Decisions:
 
@@ -699,14 +698,7 @@ Key Decisions:
   prevents leftover/redelivered messages from a previous test polluting the next
 - Assertions read via the plain JpaRepository (not the JpaAdapter) to avoid
   triggering the same LazyInitializationException risk being tested for
-- Full suite: 173 tests passing (91 unit + 29 persistence integration +
-  47 controller integration + 6 messaging integration)
-
-## Known Issues
-
-- JWT refresh with a malformed/invalid token still returns 500 instead of 401 — JwtException isn't caught by GlobalExceptionHandler's AuthenticationException handler (see Context Document 6.21). Not yet fixed.
-- Dead Letter Queue (orderflow.dlx / orderflow.dead-letter.queue) has been configured since the initial schema but is never exercised by any test — no test confirms a permanently-failing message actually lands there
-- No test currently forces findById()/save() on the four corrected adapters (Order, Product, Customer, Cart) to run outside @Transactional except via the messaging consumers; a future regression in another caller path would not be caught by Flow/Controller tests alone
+- Full suite: 176 tests passing (91 unit + 29 persistence integration + 47 controller integration + 7 messaging integration, plus 2 new AuthControllerTest cases within the 47)
 
 ## In Progress
 
@@ -765,7 +757,10 @@ Key Decisions:
 - Fixed OutboxEventScheduler publishing only event.payload() instead of the full OutboxEvent object — every RabbitMQ consumer expected the complete record and would have failed message conversion in production (see Context Document 6.24)
 - Added explicit RabbitAdmin bean and disabled default message requeue-on-failure via SimpleRabbitListenerContainerFactory — prevents infinite redelivery loops and routes permanently-failing messages to the existing but previously unused DLQ (see Context Document 6.25)
 - Fixed LazyInitializationException across findById() and save() on OrderJpaAdapter, ProductJpaAdapter, CustomerJpaAdapter, and CartJpaAdapter — added JOIN FETCH repository queries for their LAZY relationships (items, category, addresses); exposed only once MessagingFlowIntegrationTest ran adapters outside @Transactional (see Context Document 6.26)
+- Removed dead code: EventPublisherPort and RabbitMQEventPublisher were never called anywhere — OrderService persists OutboxEvent directly, bypassing them entirely
+- Fixed GlobalExceptionHandler importing javax.naming.AuthenticationException instead of org.springframework.security.core.AuthenticationException — the login failure handler never matched anything despite appearing correct; also added a JwtException handler for invalid refresh tokens (see Context Document 6.21)
+- Fixed missing binding between deadLetterExchange() and deadLetterQueue() — dead-lettered messages were being silently discarded; changed the exchange to FanoutExchange and added the binding (see Context Document 6.27)
 
 ## Known Issues / Blockers
 
-- JWT refresh with an invalid/malformed token returns 500 instead of 401 (see Context Document 6.21 and Progress section 24)
+- No test currently forces findById()/save() on the four corrected adapters (Order, Product, Customer, Cart) to run outside @Transactional except via the messaging consumers; accepted as a code-review-level mitigation via Context Document 6.26 rather than a new test (see 6.27)

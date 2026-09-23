@@ -102,4 +102,25 @@ class AuthControllerTest extends BaseIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").exists());
     }
+
+    @Test
+    void shouldRejectLoginWithWrongPassword() throws Exception {
+        String email = "wrongpass-" + UUID.randomUUID() + "@example.com";
+        persistTestUser(email, "CorrectPassword123");
+
+        LoginRequest request = new LoginRequest(email, "WrongPassword456");
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void shouldRejectRefreshWithInvalidToken() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("refreshToken", "not-a-valid-jwt"))))
+                .andExpect(status().isUnauthorized());
+    }
 }
