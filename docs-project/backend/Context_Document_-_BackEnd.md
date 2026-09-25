@@ -617,6 +617,27 @@ Considered and accepted as a documentation-level mitigation rather than a
 test — the risk is a future unknown caller path, which no test written today
 can pre-emptively cover; code review awareness of 6.26 is the intended guard.
 
+### 6.28 Sales Report Generation (Apache POI)
+
+GenerateSalesReportUseCase was a placeholder returning an empty byte[]. Implemented
+using Apache POI, generating an .xlsx with two sheets from ShopOrder data within
+the requested date range:
+
+- "Orders": one row per order (order number, customer email, status, created at,
+  subtotal, shipping cost, discount, total, payment method) — all orders in range,
+  including CANCELLED, per product decision
+- "Summary": aggregated by OrderStatus (order count + total amount per status,
+  including zero-count statuses via EnumMap for consistent output), plus a TOTAL row
+
+OrderRepositoryPort gained findByCreatedAtBetween(LocalDate, LocalDate).
+ShopOrderJpaRepository implements it via JOIN FETCH on items (same LAZY-safety
+pattern as 6.26), with the end date treated as an exclusive upper bound
+(endDate.plusDays(1).atStartOfDay()) so orders placed anytime on the end date
+are included.
+
+Currency cells use a custom "#,##0.00 \"EUR\"" format, consistent with the
+Portugal localisation (6.12).
+
 ## 7. RabbitMQ Configuration
 
 ### Exchanges

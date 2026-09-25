@@ -168,7 +168,7 @@ Ports:
 - CategoryRepositoryPort — save, findById, findAll
 - CustomerRepositoryPort — save, findById, findByEmail, findByNif
 - CartRepositoryPort — save, findById, findActiveByCustomerId
-- OrderRepositoryPort — save, findById, findByOrderNumber, findByIdempotencyKey, findByCustomerId
+- OrderRepositoryPort — save, findById, findByOrderNumber, findByIdempotencyKey, findByCustomerId, findByCreatedAtBetween
 - PaymentRepositoryPort — save, findByOrderId
 - OutboxEventRepositoryPort — save, findByStatus, updateStatus
 - ProcessedEventRepositoryPort — existsById, save
@@ -231,6 +231,7 @@ Key Decisions:
 - CustomerService.registerCustomer() now creates a User (hashed password, CUSTOMER role) before saving the Customer, using new UserRepositoryPort and RoleRepositoryPort
 - CartService now injects ProductRepositoryPort to build CartItem price snapshots server-side, closing a gap where the client-facing DTO never carried price/name/sku (correctly), but nothing populated them either
 - ProductService.updateProduct() loads the existing Product first and applies only client-editable fields, preserving sku, status, and reservedQuantity
+- ReportService generates a two-sheet .xlsx via Apache POI (Orders detail + Summary by status), replacing the placeholder empty byte[] (see Context Document 6.28)
 
 ## 10. JPA Repositories
 
@@ -248,7 +249,7 @@ Repositories:
 - CartJpaRepository — findByCustomerIdAndStatus (JOIN FETCH items), findByIdWithItems
 - ProductJpaRepository — findBySku, findByCategoryId, findByIdWithCategory (JOIN FETCH category)
 - CustomerJpaRepository — findByEmail, findByNif, findByIdWithAddresses (JOIN FETCH addresses)
-- ShopOrderJpaRepository — findByOrderNumber, findByIdempotencyKey, findByCustomerId, findByIdWithItems (JOIN FETCH items)
+- ShopOrderJpaRepository — findByOrderNumber, findByIdempotencyKey, findByCustomerId, findByIdWithItems (JOIN FETCH items), findByCreatedAtBetween (JOIN FETCH items)
 - PaymentJpaRepository — findByOrderId
 - OutboxEventJpaRepository — findByStatus
 - ProcessedEventJpaRepository — JpaRepository<ProcessedEventEntity, String>
@@ -700,9 +701,36 @@ Key Decisions:
   triggering the same LazyInitializationException risk being tested for
 - Full suite: 176 tests passing (91 unit + 29 persistence integration + 47 controller integration + 7 messaging integration, plus 2 new AuthControllerTest cases within the 47)
 
+## 26. Report Generation Tests
+
+Located in application/service/ReportServiceTest.java (unit, Mockito) and
+infrastructure/adapter/input/web/ReportControllerTest.java (integration,
+extending the existing security tests).
+
+Tests:
+
+- ReportServiceTest — 5 tests: workbook has two correctly-named sheets, Orders
+  sheet lists each order as a row, Summary sheet aggregates by status, Summary
+  includes a TOTAL row, empty result set when no orders in range
+- ReportControllerTest — 5 tests total: the 3 existing authorization tests
+  (admin/customer/no-token) plus 2 new: response has correct Content-Type and
+  Content-Disposition headers and a valid two-sheet .xlsx body, and a persisted
+  order is reflected in the Orders sheet
+
+Key Decisions:
+
+- ReportServiceTest builds ShopOrder domain objects directly and mocks
+  OrderRepositoryPort — no database needed, consistent with other service tests
+- ReportControllerTest persists real Customer/ShopOrder records and reads the
+  actual response bytes as an XSSFWorkbook to assert on real cell values, not
+  just HTTP status
+- Full suite: 183 tests passing (91 unit + 5 report unit + 29 persistence
+  integration + 47 controller integration + 5 report controller integration +
+  7 messaging integration — note some totals overlap across categories in
+  earlier counts)
+
 ## In Progress
 
-- Excel report generation (Apache POI)
 - Unit tests — frontend
 - Integration tests — frontend (Cypress)
 
@@ -760,6 +788,7 @@ Key Decisions:
 - Removed dead code: EventPublisherPort and RabbitMQEventPublisher were never called anywhere — OrderService persists OutboxEvent directly, bypassing them entirely
 - Fixed GlobalExceptionHandler importing javax.naming.AuthenticationException instead of org.springframework.security.core.AuthenticationException — the login failure handler never matched anything despite appearing correct; also added a JwtException handler for invalid refresh tokens (see Context Document 6.21)
 - Fixed missing binding between deadLetterExchange() and deadLetterQueue() — dead-lettered messages were being silently discarded; changed the exchange to FanoutExchange and added the binding (see Context Document 6.27)
+- Implemented sales report generation with Apache POI, replacing the empty byte[] placeholder — two-sheet .xlsx (Orders detail, Summary by status), added OrderRepositoryPort.findByCreatedAtBetween() with JOIN FETCH for LAZY safety (see Context Document 6.28)
 
 ## Known Issues / Blockers
 

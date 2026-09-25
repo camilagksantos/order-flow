@@ -8,6 +8,7 @@ import com.camilagksantos.orderflow.infrastructure.persistence.repository.ShopOr
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -48,6 +49,16 @@ public class OrderJpaAdapter implements OrderRepositoryPort {
     @Override
     public List<ShopOrder> findByCustomerId(Long customerId) {
         return shopOrderJpaRepository.findByCustomerId(customerId).stream()
+                .map(shopOrderPersistenceMapper::toDomain)
+                .toList();
+    }
+
+    @Override
+    public List<ShopOrder> findByCreatedAtBetween(LocalDate startDate, LocalDate endDate) {
+        return shopOrderJpaRepository.findByCreatedAtBetween(
+                        startDate.atStartOfDay(),
+                        endDate.plusDays(1).atStartOfDay()
+                ).stream()
                 .map(shopOrderPersistenceMapper::toDomain)
                 .toList();
     }
