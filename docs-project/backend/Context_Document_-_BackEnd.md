@@ -2,708 +2,489 @@
 
 ## 1. Final Architecture Plan
 
-This project follows Hexagonal Architecture (Ports and Adapters) to ensure
-a clear separation between:
+This project follows Hexagonal Architecture (Ports and Adapters) to maintain a clear separation between:
 
-- Domain logic
-- Application use cases
-- Infrastructure
-- External integrations
+* Domain logic
+* Application use cases
+* Infrastructure
+* External integrations
 
-The core business logic resides entirely within the domain layer and is
-independent of frameworks. External systems such as databases, message brokers,
-and web controllers communicate with the domain exclusively through ports.
+The core business logic resides in the domain layer and remains independent of Spring, JPA, RabbitMQ and web concerns. External systems communicate with the application through ports and adapters.
 
 ## 2. Domain Model
 
 ### Aggregates
 
-- Product
-- Customer
-- Cart
-- ShopOrder
-- Payment
+* Product
+* Customer
+* Cart
+* ShopOrder
+* Payment
 
 ### Value Objects
 
-- Money (amount + currency, default EUR)
-- Email (validated, lowercase enforced)
-- NIF (9 digits, check digit validated — Portuguese tax number)
+* Money — amount + currency, default EUR
+* Email — validated and lowercase enforced
+* NIF — 9 digits with Portuguese check-digit validation
+
+`Money`, `Email` and `NIF` remain Java records because they are value objects and do not expose behaviour methods that interfere with MapStruct.
 
 ### Supporting Entities
 
-- Category (belongs to Product domain)
-- Address (belongs to Customer domain)
-- CartItem
-- OrderItem
-- OutboxEvent
+* Category
+* Address
+* CartItem
+* OrderItem
+* OutboxEvent
+* User
+* Role
 
 ### Domain Events
 
-- OrderCreatedEvent
-- OrderPaidEvent
-- OrderCancelledEvent
-- OrderShippedEvent
-- OrderStatusChangedEvent
+* OrderCreatedEvent
+* OrderPaidEvent
+* OrderCancelledEvent
+* OrderShippedEvent
+* OrderStatusChangedEvent
 
 ### Domain Exceptions
 
-- DomainException (abstract base)
-- ResourceNotFoundException → HTTP 404
-- BusinessRuleException → HTTP 422
-- ProductNotFoundException
-- CustomerNotFoundException
-- CartNotFoundException
-- OrderNotFoundException
-- InsufficientStockException
-- InvalidOrderStatusTransitionException
+* DomainException — abstract base
+* ResourceNotFoundException → HTTP 404
+
+  * ProductNotFoundException
+  * CustomerNotFoundException
+  * CartNotFoundException
+  * OrderNotFoundException
+* BusinessRuleException → HTTP 422
+
+  * InsufficientStockException
+  * InvalidOrderStatusTransitionException
 
 ## 3. Order State Machine
 
 Allowed transitions:
 
-- PENDING → PAID, CANCELLED
-- PAID → PREPARING
-- PREPARING → SHIPPED, CANCELLED
-- SHIPPED → DELIVERED
+* PENDING → PAID, CANCELLED
+* PAID → PREPARING
+* PREPARING → SHIPPED, CANCELLED
+* SHIPPED → DELIVERED
 
-Transitions are validated inside the ShopOrder aggregate.
-Invalid transitions throw InvalidOrderStatusTransitionException.
+Transitions are validated inside the `ShopOrder` aggregate. Invalid transitions throw `InvalidOrderStatusTransitionException`.
 
 ## 4. Package Structure
 
+```text
 orderflow/
 └── src/main/java/com/camilagksantos/orderflow/
-├── domain/
-│ ├── auth/ ← User, Role
-│ ├── cart/ ← Cart, CartItem, CartStatus
-│ ├── customer/ ← Customer, Address, CustomerStatus
-│ ├── event/ ← DomainEvent, domain events, OutboxEvent
-│ ├── exception/ ← domain exceptions
-│ ├── order/ ← ShopOrder, OrderItem, OrderStatus, PaymentMethod
-│ ├── payment/ ← Payment, PaymentStatus
-│ ├── product/ ← Product, Category, ProductStatus
-│ └── shared/ ← Money, Email, NIF
-├── application/
-│ ├── port/
-│ │ ├── input/ ← use case interfaces
-│ │ └── output/ ← repository and event interfaces
-│ ├── service/ ← use case implementations
-│ ├── dto/ ← request / response models
-│ └── mapper/ ← domain ↔ dto mappers
-└── infrastructure/
-├── adapter/
-│ ├── input/
-│ │ ├── web/ ← REST controllers
-│ │ └── messaging/ ← RabbitMQ consumers
-│ └── output/
-│ ├── persistence/ ← JPA adapters
-│ ├── messaging/ ← RabbitMQ publisher
-│ └── email/ ← MailHog adapter
-├── persistence/
-│ ├── entity/ ← JPA entities
-│ ├── repository/ ← Spring Data JPA interfaces
-│ └── mapper/ ← domain ↔ entity mappers
-└── config/ ← Spring beans, RabbitMQ, OpenAPI, Security
+    ├── domain/
+    │   ├── auth/          ← User, Role
+    │   ├── cart/          ← Cart, CartItem, CartStatus
+    │   ├── category/      ← Category
+    │   ├── customer/      ← Customer, Address, CustomerStatus
+    │   ├── event/         ← DomainEvent, domain events, OutboxEvent
+    │   ├── exception/     ← domain exceptions
+    │   ├── order/         ← ShopOrder, OrderItem, OrderStatus, PaymentMethod
+    │   ├── payment/       ← Payment, PaymentStatus
+    │   ├── product/       ← Product, ProductStatus
+    │   └── shared/        ← Money, Email, NIF
+    ├── application/
+    │   ├── port/
+    │   │   ├── input/     ← use case interfaces
+    │   │   └── output/    ← repository and external-service interfaces
+    │   ├── service/       ← use case implementations
+    │   ├── dto/           ← request / response models
+    │   └── mapper/        ← domain ↔ DTO mappers
+    └── infrastructure/
+        ├── adapter/
+        │   ├── input/
+        │   │   ├── web/        ← REST controllers
+        │   │   └── messaging/  ← RabbitMQ consumers
+        │   └── output/
+        │       ├── persistence/ ← JPA adapters
+        │       ├── messaging/   ← messaging infrastructure
+        │       └── email/       ← MailHog / SMTP adapter
+        ├── persistence/
+        │   ├── entity/      ← JPA entities
+        │   ├── repository/  ← Spring Data JPA repositories
+        │   └── mapper/      ← entity ↔ domain mappers
+        └── config/          ← Spring beans, RabbitMQ, OpenAPI; handler/ (exception handling) and security/ subpackages
+```
 
 ## 5. Environment Profiles
 
 ### dev
 
-- MySQL 8 via Docker
-- RabbitMQ via Docker
-- MailHog via Docker
-- Used for local development
+* MySQL 8 via Docker
+* RabbitMQ via Docker
+* MailHog via Docker
+* Used for local development
+
+The dev RabbitMQ keeps its state between restarts. Changing the type of an existing exchange (for example `orderflow.dlx`, changed from direct to fanout) makes the application fail at startup with `PRECONDITION_FAILED`, because RabbitMQ cannot redeclare an exchange with a different type. Delete the old exchange (`docker exec order-flow-rabbitmq rabbitmqadmin -u guest -p guest delete exchange name=<exchange>`) or recreate the volumes with `docker compose down -v`. Testcontainers are not affected because they start empty.
 
 ### test
 
-- Testcontainers (MySQL + RabbitMQ)
-- Spins up real containers per test suite
-- Used for integration tests
+* Testcontainers for MySQL and RabbitMQ
+* Shared singleton containers for the test suite
+* Used for integration tests
+* Docker must be running before the integration tests start
 
 ### prod
 
-- MySQL 8 (external)
-- RabbitMQ (external)
-- SMTP (external)
-- Configuration via environment variables
+* MySQL 8 external
+* RabbitMQ external
+* SMTP external
+* Configuration through environment variables
 
 ## 6. Key Architectural Decisions
 
-### 6.1 Pure Hexagonal Architecture
+### 6.1 Domain Models and DTOs
 
-The domain layer contains no dependencies on frameworks.
-Spring Boot, JPA, RabbitMQ and all external libraries are restricted
-to infrastructure and adapter layers.
-Domain models are plain Java records with no annotations.
+Domain aggregates are regular Java classes using Lombok for boilerplate. They have no JPA or Spring annotations and expose domain behaviour through void mutation methods.
 
-### 6.2 Domain Models as Lombok Classes
+Examples:
 
-Domain models are implemented as regular Java classes with Lombok annotations
-(@Getter, @Setter, @Builder, @NoArgsConstructor, @AllArgsConstructor).
+* `Product` — reserve, release, activate, deactivate, confirmSale
+* `Customer` — block, activate
+* `Cart` — addItem, removeItem, convert
+* `ShopOrder` — pay, startPreparing, ship, deliver, cancel
+* `Payment` — approve, decline
 
-Reason for this choice:
-Java records exposed behaviour methods (reserve, ship, cancel, addItem) as
-mappable properties to MapStruct, generating unmapped property warnings and
-requiring excessive @Mapping(ignore = true) annotations for every method.
-Migrating to Lombok classes eliminated this complexity entirely.
+DTOs are Java records because they are immutable transfer objects with no behaviour.
 
-Domain models remain framework-free — no JPA, Spring or external annotations.
-Behaviour methods mutate the object state directly (void return) instead of
-returning new instances, following a more pragmatic and maintainable approach.
+### 6.2 Persistence Mapping
 
-DTOs are implemented as Java records — immutable transfer objects with no
-behaviour are the ideal use case for records.
+JPA entities are regular Lombok classes in `infrastructure/persistence/entity/`.
 
-### 6.3 JPA Entity Mapping
+Relationship loading:
 
-- Located in infrastructure/persistence/entity/
-- Implemented as regular classes with Lombok
-- Lazy loading for all relationships
-- Enums mapped using EnumType.STRING
-- Auto-generated IDs using GenerationType.IDENTITY for Long PKs
-- String UUIDs for Cart, CartItem, ShopOrder, OrderItem, Payment PKs
+* `LAZY` for normal relationships
+* `UserEntity.roles` uses `EAGER` because the roles are required by Spring Security
 
-### 6.4 Mapper Strategy
+Enums use `EnumType.STRING`.
 
-Two types of mappers:
+Timestamps are managed through `@PrePersist` and `@PreUpdate`.
 
-Application Mappers (application/mapper/)
+Primary keys:
 
-- DTO ↔ Domain
-- Used by controllers and services
+* `Long` with `GenerationType.IDENTITY` for role, user, category, product, customer and address
+* String UUIDs for cart, cart item, order, order item, payment, outbox event and processed event
 
-Persistence Mappers (infrastructure/persistence/mapper/)
+Historical order items do not use `orphanRemoval`. Cart items do use `orphanRemoval` because they do not exist outside their cart.
 
-- Entity ↔ Domain
-- Used by persistence adapters
+### 6.3 MapStruct Strategy
 
-MapStruct is used for all mappings — compile-time code generation, type-safe, no runtime reflection.
+Two mapper groups are used:
 
-Type conversion is handled via default methods declared directly in each mapper interface.
-MapStruct detects the conversion automatically by matching method signatures — no @Named or qualifiedByName needed.
+* `application/mapper/` — DTO ↔ domain
+* `infrastructure/persistence/mapper/` — entity ↔ domain
 
-Conversion methods used:
+MapStruct is used for compile-time, type-safe mapping.
 
-- BigDecimal → Money: default Money toMoney(BigDecimal value)
-- Money → BigDecimal: default BigDecimal toBigDecimal(Money money)
-- String → Email: default Email toEmail(String value)
-- Email → String: default String fromEmail(Email email)
-- String → NIF: default NIF toNIF(String value)
-- NIF → String: default String fromNIF(NIF nif)
+Type conversion is implemented through default methods matched by method signature, without `@Named`, `qualifiedByName` or mapping expressions for the standard conversions.
 
-Ignored fields in toEntity() mappings:
+Standard conversions include:
 
-- createdAt, updatedAt — managed by @PrePersist / @PreUpdate
-- Direct-owning relationship fields with no cascade dependency are set via
-  shallow entity references built from the raw domain ID, not truly "ignored"
-  — see 6.15 for the full pattern. Only child-side back-references in
-  bidirectional cascaded relations (e.g. CartItemEntity.cart) remain genuinely
-  ignored, resolved instead via @AfterMapping on the parent mapper.
+* `BigDecimal` ↔ `Money`
+* `String` ↔ `Email`
+* `String` ↔ `NIF`
 
-Response DTOs use Money directly instead of BigDecimal — richer representation
-in JSON responses (amount + currency) and easier to identify in logs.
+Response DTOs use `Money`. Request DTOs use `BigDecimal` for price input.
 
-Request DTOs use BigDecimal for price fields — clients send simple numeric values,
-not Money objects.
+The boolean field `isDefault` was renamed to `defaultAddress` to avoid Lombok/MapStruct getter conflicts.
 
-boolean fields renamed from isX to xBoolean pattern (e.g. isDefault → defaultAddress)
-to avoid MapStruct/Lombok getter conflict where Lombok generates isX() getter
-and MapStruct interprets the property name as x instead of isX.
+### 6.4 Foreign-Key Reference Mapping
 
-### 6.5 Transactional Outbox Pattern
+When the domain stores a raw ID but JPA expects an entity reference, persistence mappers build shallow entity references containing only the ID.
 
-Events are persisted in the same database transaction as the aggregate.
-A scheduler reads pending OutboxEvents and publishes them to RabbitMQ.
-Guarantees at-least-once delivery without distributed transactions.
+This pattern is used for:
 
-OutboxEvent fields:
+* `Customer.userId` → `UserEntity`
+* `Cart.customerId` → `CustomerEntity`
+* `ShopOrder.customerId` → `CustomerEntity`
+* `Payment.orderId` → `ShopOrderEntity`
 
-- id: UUID
-- eventType: ORDER_CREATED, ORDER_PAID, ORDER_CANCELLED, ORDER_SHIPPED
-- payload: JSON serialized event data
-- status: PENDING, SENT, FAILED
-- createdAt: timestamp
+For bidirectional cascaded relationships, child back-references are linked after mapping through parent-level `@AfterMapping` methods:
+
+* Cart items → Cart
+* Customer addresses → Customer
+* Order items → ShopOrder
+
+### 6.5 Transactional Outbox
+
+Outbox events are persisted in the same database transaction as the aggregate change.
+
+A scheduled process reads pending events and publishes the complete `OutboxEvent` to RabbitMQ.
+
+This provides at-least-once delivery without distributed transactions.
+
+`OutboxEvent` contains:
+
+* id
+* eventType
+* payload
+* status: `PENDING`, `SENT`, `FAILED`
+* createdAt
 
 ### 6.6 Idempotency
 
-ShopOrder carries an idempotencyKey (UUID).
-Each RabbitMQ consumer checks the processed_event table before handling a message.
-Duplicate messages are safely ignored without side effects.
+`ShopOrder` contains an `idempotencyKey` to prevent duplicate checkout requests.
+
+Each RabbitMQ consumer also checks the `processed_event` table before applying a message. Duplicate messages are ignored without repeating side effects.
 
 ### 6.7 Price Snapshots
 
-CartItem and OrderItem store snapshots of product name, SKU and price
-at the moment of the action.
-Price changes never affect historical cart or order records.
+`CartItem` captures product name, SKU and unit price when the item is added to the cart.
+
+`OrderItem` captures product name, SKU and unit price when the checkout creates the order. `subtotal` is calculated and persisted.
+
+Historical prices are therefore independent of later product price changes.
 
 ### 6.8 Stock Control
 
-Product has two fields: stockQuantity and reservedQuantity.
-availableQuantity = stockQuantity - reservedQuantity.
-Stock is controlled synchronously on order creation and cancellation.
-InsufficientStockException is thrown when availableQuantity < requested quantity.
+`Product` contains:
 
-### 6.9 Security Architecture
+* `stockQuantity`
+* `reservedQuantity`
 
-Spring Security with JWT-based authentication.
-UserDetails is implemented in the infrastructure layer (UserDetailsImpl)
-to avoid coupling the domain User record to the framework.
+`availableQuantity = stockQuantity - reservedQuantity`.
+
+Stock changes are processed through the order event flow:
+
+* `ORDER_CREATED` → reserve stock
+* `ORDER_PAID` → confirm sale and decrement stock and reserved quantities
+* `ORDER_CANCELLED` → release reserved stock
+
+`InsufficientStockException` is raised when the available quantity is insufficient for a reservation.
+
+No separate stock movement audit table is currently used; stock state is maintained through the product fields.
+
+### 6.9 Checkout Data Integrity
+
+Checkout requires `paymentMethod` explicitly through the full request/use-case/domain chain. `ShopOrder.fromCart()` requires the value and therefore prevents `payment_method` from being left unset.
+
+`CartService` builds cart price snapshots server-side from the product record. Clients provide only product ID and quantity.
+
+### 6.10 Customer Registration and Authentication
+
+Customer registration creates the associated `User` first, using a hashed password and the `CUSTOMER` role, then persists the `Customer` with the generated user ID.
+
+User and role persistence follows the same port/adapter pattern as other persistence operations.
+
+Passwords are encoded before persistence and are not stored or logged in raw form.
+
+### 6.11 Security Architecture
+
+Spring Security uses stateless JWT authentication.
+
+* Access token expiration: 15 minutes
+* Refresh token expiration: 7 days
+* Refresh tokens are rotated on refresh
+* Password hashing: BCrypt
 
 Roles:
 
-- CUSTOMER: manage own cart, place and view own orders
-- ADMIN: manage products, update order status, access reports
+* `CUSTOMER` — manage own cart, place and view own orders
+* `ADMIN` — manage products, update order status and access reports
 
-Customer data immutability:
+The JWT contains the authenticated user's email, roles and, when a customer record exists, `customerId`.
 
-- name, email and NIF cannot be changed after registration
-- Enforced at the domain level
+Customer-scoped routes verify that the path `customerId` matches the authenticated customer's claim. Order routes addressed by order ID or order number verify ownership against the loaded order; admins are allowed to access any order.
 
-### 6.10 Exception Handling
+Customer-scoped routes (the cart routes and `GET /orders/customer/{customerId}`) do not exempt admins: an admin gets 403 there because the admin token carries no `customerId`.
 
-Centralised via @ControllerAdvice (GlobalExceptionHandler).
+An order that does not exist returns 404, while an existing order owned by someone else returns 403, so a caller can tell whether an order id exists. Order IDs are UUIDs, which makes probing impractical; returning 404 in both cases would close that if it ever matters.
 
-Exception mapping:
+Unauthenticated requests return `401`. Authenticated users without sufficient permission return `403`.
 
-- 404: ResourceNotFoundException
-- 422: BusinessRuleException
-- 400: MethodArgumentNotValidException
-- 409: DataIntegrityViolationException
-- 500: Generic Exception
+Customer `name`, `email` and `NIF` are immutable after registration.
 
-### 6.11 CORS Configuration
+### 6.12 Exception Handling
 
-- Allowed origin: http://localhost:4200
-- Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
+`GlobalExceptionHandler` centralises API exception mapping:
 
-### 6.12 Portugal Localisation
+* `ResourceNotFoundException` → 404
+* `BusinessRuleException` → 422
+* `MethodArgumentNotValidException` → 400
+* `DataIntegrityViolationException` → 409
+* Authentication failures (`AuthenticationException`) → 401
+* `JwtException` (invalid or expired token, for example on refresh) → 401
+* `AccessDeniedException` → 403
+* Unhandled exceptions → 500
 
-- Currency: EUR (default in Money value object)
-- Tax number: NIF (9 digits with check digit validation)
-- Address format: district and postal code (XXXX-XXX)
-- Country default: PT
-- Payment methods: CREDIT_CARD, MBWAY, MULTIBANCO
+The authentication handler must import Spring Security's `AuthenticationException` (`org.springframework.security.core`); the JNDI class of the same name (`javax.naming`) never matches a login failure.
 
-### 6.13 Cart Design
-
-- Cart never expires (conscious product decision)
-- Cart is always tied to an authenticated customer
-- CartItem stores price snapshot at time of addition
-- Cart converts to ShopOrder on checkout
-
-### 6.14 Customer-User Mapping (MapStruct)
-
-Customer.userId (Long, domain) maps to CustomerEntity.user (UserEntity, @OneToOne LAZY).
+`AccessDeniedException` needs its own handler: without it, the generic `Exception` handler turns an `AccessDeniedException` thrown inside a controller into a 500.
 
-Since these types are incompatible for direct MapStruct auto-mapping, explicit
-default conversion methods are declared in CustomerPersistenceMapper:
-
-- Long -> UserEntity: creates a "shallow" UserEntity with only the id set
-  (equivalent to EntityManager.getReference() semantics), sufficient for
-  Hibernate to resolve the FK on insert/update without loading the full User.
-- UserEntity -> Long: extracts the id directly.
-
-This assumes the referenced User already exists in the database at the time
-Customer is persisted — true for the current registration flow (User is
-always created before Customer). If Customer creation without a pre-existing
-User is ever required, the FK constraint will correctly reject the insert.
+### 6.13 CORS
 
-Known pitfall: @Mapping(target = "user", ignore = true) silently drops the
-user_id value with no compilation error and no runtime exception — MapStruct
-simply leaves the field null. Since user_id is NOT NULL UNIQUE at the schema
-level, this only surfaces as a DataIntegrityViolationException at persistence
-time, not at the domain or mapping layer. Any @Mapping(ignore = true) on a
-NOT NULL column should be treated as a red flag during review.
-
-### 6.15 MapStruct FK Reference Pattern
-
-Applied consistently across persistence mappers whenever a domain object
-holds a raw ID (Long/String) but the corresponding JPA entity expects a
-full related entity object for a @ManyToOne/@OneToOne relationship:
-
-Simple relations (no cascade): a default conversion method builds a
-"shallow" entity instance with only the id set (equivalent to
-EntityManager.getReference() semantics) — sufficient for Hibernate to
-resolve the FK on insert/update.
-
-- Customer.userId -> UserEntity (CustomerPersistenceMapper)
-- Cart.customerId -> CustomerEntity (CartPersistenceMapper)
-- ShopOrder.customerId -> CustomerEntity (ShopOrderPersistenceMapper)
-- Payment.orderId -> ShopOrderEntity (PaymentPersistenceMapper)
-
-Bidirectional relations with cascade (@OneToMany mappedBy + CascadeType.ALL):
-the child mapper still ignores the back-reference (e.g. cart in
-CartItemPersistenceMapper), but the parent mapper adds an @AfterMapping
-method that iterates the mapped children and sets the back-reference
-after the object graph is built, before persistence.
-
-- CartPersistenceMapper.linkItemsToCart() -> CartItemEntity.cart
-- CustomerPersistenceMapper.linkAddressesToCustomer() -> AddressEntity.customer
-- ShopOrderPersistenceMapper.linkItemsToOrder() -> OrderItemEntity.order
-
-Known pitfall this replaces: @Mapping(target = "x", ignore = true) on a
-NOT NULL FK column silently persists null with no compile-time or
-mapping-time error — it only surfaces as a DataIntegrityViolationException
-at the database layer. Any ignored relationship field should be checked
-against the schema's NOT NULL constraints during review.
-
-### 6.16 Checkout PaymentMethod Propagation
-
-Bug found: OrderService.checkout() called ShopOrder.fromCart() without ever
-setting paymentMethod, despite shop_order.payment_method being NOT NULL.
-CheckoutRequest and CheckoutUseCase never carried paymentMethod at all, so
-the data was missing from the point of entry, not just forgotten in one method.
-
-Fix applied across the full chain: CheckoutRequest gained a required
-paymentMethod field; CheckoutUseCase.checkout() signature extended with a
-PaymentMethod parameter; CartController passes it through; ShopOrder.fromCart()
-itself now requires paymentMethod as a parameter, consistent with how
-idempotencyKey and customerEmail — data that cannot be derived from the Cart —
-are already required parameters of that factory.
-
-### 6.17 Customer Registration and User/Role Creation
-
-Bug found: CustomerService.registerCustomer() only saved the Customer,
-never creating a User account. RegisterCustomerRequest had no password field,
-CustomerMapper ignored userId entirely, and no endpoint anywhere in the
-system created a User — meaning every call to POST /api/v1/customers would
-fail on the customer.user_id NOT NULL UNIQUE constraint, and even if it
-hadn't, the registered customer would have had no way to ever log in.
-
-This also surfaced a gap in the hexagonal architecture itself: User and Role
-persistence bypassed the port/adapter pattern entirely, accessed directly via
-UserJpaRepository from UserDetailsServiceImpl and JwtAuthenticationFilter.
-
-Fix:
-
-- RegisterCustomerRequest gained a required password field
-- New output ports: UserRepositoryPort, RoleRepositoryPort
-- New adapters: UserJpaAdapter, RoleJpaAdapter (following the same pattern as
-  all other aggregates)
-- RoleJpaRepository gained findByName(String)
-- RegisterCustomerUseCase.registerCustomer() signature extended to accept
-  the raw password
-- CustomerService now: looks up the CUSTOMER role, hashes the password via
-  PasswordEncoder, builds and saves a User with that role, then sets
-  customer.userId from the saved User's id before saving the Customer
-- New migration V4\_\_seed_roles.sql seeds ADMIN and CUSTOMER roles
-  (INSERT IGNORE, safe against pre-existing data)
-
-Password is never persisted or logged in raw form — it exists only in memory
-between the HTTP request and the PasswordEncoder.encode() call.
-
-### 6.18 Testcontainers Singleton Container Pattern
-
-Bug found: BaseIntegrationTest originally declared MySQL and RabbitMQ
-containers as static fields annotated with @Container. Since @Container
-ties container lifecycle to JUnit's callback management, and the field is
-static (shared across all subclasses via inheritance), the first integration
-test class to finish caused JUnit to stop the containers — leaving every
-subsequent test class in the same Maven run connecting to dead containers
-(Connection refused / HikariPool timeout errors).
-
-Fix: containers are now declared as plain static final fields (no @Container
-annotation) and started manually in a static initializer block:
-
-    static { mysql.start(); rabbitMQ.start(); }
-
-This is the Testcontainers-recommended "singleton container" pattern for
-suites with multiple test classes sharing infrastructure. A single MySQL and
-RabbitMQ instance now serves the entire test run, torn down only by Ryuk at
-JVM exit — not by JUnit's per-class afterAll lifecycle. @Transactional on each
-test class remains essential, since the schema is no longer reset between
-classes — rollback isolation is the only thing preventing cross-test data
-leakage.
-
-### 6.19 Cart Price Snapshot Enforcement
-
-Bug found: CartController.addItem() built a CartItem from client input containing
-only productId and quantity, never populating unitPrice, productName, or productSku.
-This violated the price snapshot decision (6.7) and caused a NullPointerException
-whenever an item was persisted, since CartItem.unitPrice is required for the
-CartItemPersistenceMapper's Money -> BigDecimal conversion.
-
-The client legitimately should never supply price, name, or SKU — allowing that
-would let a client dictate its own price, a serious business logic flaw.
-
-Fix: AddToCartUseCase.addToCart() now takes (customerId, productId, quantity)
-instead of a pre-built CartItem. CartService fetches the Product via
-ProductRepositoryPort and builds the CartItem snapshot server-side before
-adding it to the cart. CartController no longer constructs CartItem directly.
-
-### 6.20 Product Update Field Preservation
-
-Bug found: ProductService.updateProduct() saved the incoming Product object
-directly, without first loading the existing record. Since UpdateProductRequest
-has no sku field (sku is immutable by design, per 6.2 DTO decisions), the
-mapper-built Product always had sku = null, causing every update to fail
-the sku NOT NULL constraint.
-
-Fix: updateProduct() now loads the existing Product first, then applies only
-the fields UpdateProductRequest is allowed to change (name, description, price,
-stockQuantity, category, imageUrl), preserving id, sku, status, and
-reservedQuantity from the existing record.
-
-### 6.21 Authentication Entry Point (401 vs 403)
-
-Bug found: SecurityConfig defined no explicit AuthenticationEntryPoint, so
-Spring Security fell back to its default Http403ForbiddenEntryPoint — meaning
-requests with no token at all received 403 Forbidden instead of 401 Unauthorized,
-conflating "not authenticated" with "authenticated but not authorized."
-
-Fix: SecurityConfig now configures exceptionHandling with a custom
-AuthenticationEntryPoint that returns 401 for any unauthenticated request.
-
-A second, more serious bug was found in the same area: GlobalExceptionHandler's
-AuthenticationException handler imported javax.naming.AuthenticationException
-(the JNDI/LDAP exception) instead of org.springframework.security.core.AuthenticationException.
-Since BadCredentialsException extends the Spring Security class, not the JNDI
-one, the handler never matched anything — every wrong-password login attempt
-fell through to the generic 500 handler despite the handler appearing to
-exist. Fixed by correcting the import.
-
-A JwtException handler was also added, covering token refresh with a malformed
-or invalid token — previously uncaught, also falling through to 500.
-
-Both paths are now covered by AuthControllerTest (shouldRejectLoginWithWrongPassword,
-shouldRejectRefreshWithInvalidToken).
-
-### 6.22 Response DTO Field Completeness
-
-Bug found: OrderResponse was missing a cancelReason field despite
-ShopOrder.cancelReason existing in the domain. Since MapStruct maps by name
-automatically, a field simply absent from the DTO is silently dropped from
-every response with no error — the cancellation reason was persisted correctly
-but never returned to API clients.
-
-Lesson: when adding a domain field, response DTO parity should be checked
-explicitly, since nothing fails at compile or mapping time when a DTO field
-is missing — only a specific consumer noticing the gap.
-
-### 6.23 Spring Boot 4 Module System Migration Notes
-
-Spring Boot 4.0 split the former monolithic spring-boot-autoconfigure and
-spring-boot-test-autoconfigure jars into dozens of small, technology-specific
-modules. This project (on 4.0.5) hit three concrete breaking changes when
-writing controller integration tests:
-
-1. @AutoConfigureMockMvc moved from
-   org.springframework.boot.test.autoconfigure.web.servlet to
-   org.springframework.boot.webmvc.test.autoconfigure, and requires an
-   explicit test dependency: spring-boot-starter-webmvc-test (added to pom.xml,
-   test scope). It is no longer pulled in transitively by spring-boot-starter-test.
-
-2. Jackson 3 is now the default JSON library. The autoconfigured bean is
-   tools.jackson.databind.json.JsonMapper, not com.fasterxml.jackson.databind.ObjectMapper.
-   Both classes coexist on the classpath (Jackson 2 kept for compatibility), which
-   IDEs may present ambiguously. All controller test fields now declare
-   `JsonMapper objectMapper` instead of `ObjectMapper objectMapper` — the API
-   (writeValueAsString, readTree) is unchanged, only the type.
-
-3. org.springframework.test.web.servlet.MockMvc itself did NOT move — false
-   "cannot autowire" warnings seen in IntelliJ for this class were IDE inspection
-   lag, not real errors; verified via successful `mvn test` runs.
-
-Reference: official Spring Boot 4.0 Migration Guide
-(github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.0-Migration-Guide),
-"Module Dependencies" / "Test Code" sections.
-
-Verified fix: full suite (167 tests: 91 unit + 29 persistence integration +
-47 controller integration) passes cleanly in a single `mvn test` run after
-this change.
-
-### 6.24 Outbox Event Payload Mismatch
-
-Bug found: OutboxEventScheduler.processEvent() published event.payload() (a
-raw String, e.g. an order ID) instead of the full OutboxEvent object, while
-all four RabbitMQ consumers declared their @RabbitListener method signature
-as consume(OutboxEvent event) — expecting the complete record (id, eventType,
-payload, status, createdAt). Every message conversion would have failed in
-production; this was never caught because no test exercised the scheduler and
-a consumer together before MessagingFlowIntegrationTest was written.
-
-Fix: OutboxEventScheduler now publishes the full event object via
-rabbitTemplate.convertAndSend(exchange, routingKey, event) instead of
-event.payload().
-
-### 6.25 RabbitMQ Consumer Failure Handling and RabbitAdmin
-
-Two related fixes to RabbitMQConfig:
-
-1. RabbitAdmin bean added explicitly. Spring Boot 4 only autoconfigures
-   AmqpAdmin when spring.rabbitmq.dynamic=true is set; this project does not
-   set that property, so RabbitAdmin was never available for injection
-   (e.g. for queue purging in tests). A RabbitAdmin @Bean was added, taking
-   ConnectionFactory as its only dependency.
-
-2. SimpleRabbitListenerContainerFactory bean added with
-   setDefaultRequeueRejected(false). By default, Spring AMQP requeues a
-   message whose listener throws an exception, causing an infinite
-   redelivery loop for any message that fails permanently (e.g. referencing
-   an order that was later deleted) — starving the queue and flooding logs,
-   despite a Dead Letter Queue already being configured and unused. With
-   requeue disabled, failed messages now route to the DLX/DLQ as originally
-   intended.
-
-### 6.26 LazyInitializationException Across findById() and save()
-
-Bug found: MessagingFlowIntegrationTest was the first test suite to exercise
-persistence adapters outside of @Transactional (necessary — see 6.18's note
-that @Transactional would hide dead RabbitMQ connections from a separate
-consumer thread). This exposed a structural bug present since the mappers
-were written: every JPA entity with a LAZY relationship (ShopOrderEntity.items,
-ProductEntity.category, CustomerEntity.addresses, CartEntity.items) throws
-LazyInitializationException when its persistence mapper's toDomain() accesses
-that relationship after the originating Hibernate session has closed. Flow
-and Controller tests never caught this because @Transactional kept a session
-open for the whole test.
-
-The bug existed in two places per aggregate:
-
-- findById(): plain JpaRepository.findById() returns an entity with LAZY
-  proxies; mapping it to domain immediately after touches the proxy with no
-  session.
-- save(): the entity returned by JpaRepository.save() suffers the same
-  problem when mapped back to domain for the return value.
-
-Fix: added explicit JOIN FETCH repository queries and route both findById()
-and save() through them:
-
-- ShopOrderJpaRepository.findByIdWithItems() — OrderJpaAdapter
-- ProductJpaRepository.findByIdWithCategory() — ProductJpaAdapter
-- CustomerJpaRepository.findByIdWithAddresses() — CustomerJpaAdapter
-- CartJpaRepository.findByIdWithItems() (and findByCustomerIdAndStatus(),
-  rewritten with the same fetch) — CartJpaAdapter
-
-save() now performs an extra SELECT after INSERT/UPDATE to reload the entity
-with its LAZY relationship populated before mapping to domain — an accepted
-performance trade-off for correctness. OrderItemPersistenceMapper and
-PaymentPersistenceMapper were not affected: both only read the parent's .id
-via property navigation, which MapStruct resolves without touching the proxy.
-
-Known gap: no test currently forces findById()/save() to run outside
-@Transactional except via the messaging consumers. A future regression in
-another caller path would not be caught by Flow/Controller tests alone.
-
-### 6.27 Dead Letter Queue Binding Missing
-
-Bug found: RabbitMQConfig declared deadLetterExchange() and deadLetterQueue()
-beans, and every order queue was configured with x-dead-letter-exchange
-pointing to it, but no Binding connected the DLX to the DLQ. Since 6.25's
-defaultRequeueRejected(false) fix now routes failed messages to this exchange
-instead of requeuing them forever, any message that failed permanently was
-being silently discarded by RabbitMQ — published to an exchange with no
-bound queue — rather than landing in the DLQ as the architecture intended.
-
-A second detail mattered here: deadLetterExchange() was a DirectExchange,
-which requires matching routing keys. Messages dead-lettered by RabbitMQ
-retain their original routing key (order.created, order.paid, etc.), so a
-direct binding would have needed one entry per source queue's routing key.
-Changed deadLetterExchange() to a FanoutExchange instead — it ignores routing
-keys entirely, so a single unconditional binding captures dead-lettered
-messages regardless of which queue they originated from.
-
-Fix: deadLetterExchange() changed from DirectExchange to FanoutExchange; a
-deadLetterBinding() bean added connecting deadLetterQueue() to it.
-
-Covered by MessagingFlowIntegrationTest.shouldRouteFailedMessageToDeadLetterQueue
-— publishes an event referencing a non-existent order, confirms the message
-count on orderflow.dead-letter.queue increases via RabbitAdmin.getQueueProperties().
-
-Note: no test forces findById()/save() on the four LAZY-relationship-corrected
-adapters (6.26) to run outside @Transactional except via messaging consumers.
-Considered and accepted as a documentation-level mitigation rather than a
-test — the risk is a future unknown caller path, which no test written today
-can pre-emptively cover; code review awareness of 6.26 is the intended guard.
-
-### 6.28 Sales Report Generation (Apache POI)
-
-GenerateSalesReportUseCase was a placeholder returning an empty byte[]. Implemented
-using Apache POI, generating an .xlsx with two sheets from ShopOrder data within
-the requested date range:
-
-- "Orders": one row per order (order number, customer email, status, created at,
-  subtotal, shipping cost, discount, total, payment method) — all orders in range,
-  including CANCELLED, per product decision
-- "Summary": aggregated by OrderStatus (order count + total amount per status,
-  including zero-count statuses via EnumMap for consistent output), plus a TOTAL row
-
-OrderRepositoryPort gained findByCreatedAtBetween(LocalDate, LocalDate).
-ShopOrderJpaRepository implements it via JOIN FETCH on items (same LAZY-safety
-pattern as 6.26), with the end date treated as an exclusive upper bound
-(endDate.plusDays(1).atStartOfDay()) so orders placed anytime on the end date
-are included.
-
-Currency cells use a custom "#,##0.00 \"EUR\"" format, consistent with the
-Portugal localisation (6.12).
+Allowed origin for the current frontend integration:
+
+* `http://localhost:4200`
+
+Allowed methods:
+
+* GET
+* POST
+* PUT
+* PATCH
+* DELETE
+* OPTIONS
+
+### 6.14 Portugal Localisation
+
+* Currency: EUR
+* Tax number: NIF with Portuguese check digit validation
+* Address: district and postal code (`XXXX-XXX`)
+* Default country: PT
+* Payment methods: `CREDIT_CARD`, `MBWAY`, `MULTIBANCO`
+
+### 6.15 Cart Design
+
+* Cart does not expire
+* Cart is tied to an authenticated customer
+* Cart items contain price snapshots
+* Checkout converts the cart into a `ShopOrder`
+
+### 6.16 Persistence and Lazy-Loading Safety
+
+`spring.jpa.open-in-view` is disabled.
+
+Because important relationships are LAZY, adapters that return aggregates with related data use repository queries with explicit `JOIN FETCH` where required.
+
+The following repositories have dedicated fetch methods:
+
+* ShopOrder items
+* Product category
+* Customer addresses
+* Cart items
+
+The affected adapters also reload the entity after `save()` when the mapped domain object requires the relationship to be initialized outside an open Hibernate session.
+
+Any new caller of these adapters that runs without an open session relies on those `JOIN FETCH` queries. The Flow and Controller tests run inside `@Transactional` and would not catch a regression there; only the messaging tests exercise this path, so review new adapter callers with it in mind.
+
+### 6.17 Update Field Preservation
+
+`UpdateProductRequest` cannot modify SKU, status or reserved quantity.
+
+`ProductService.updateProduct()` first loads the existing product and updates only the permitted fields, preserving immutable or system-managed values.
+
+### 6.18 Spring Boot 4 Test Infrastructure
+
+The project uses Spring Boot 4.0.5, which split the former monolithic test-autoconfigure module into technology-specific modules.
+
+* Controller tests need the `spring-boot-starter-webmvc-test` dependency (test scope); it is no longer pulled in by `spring-boot-starter-test`.
+* `@AutoConfigureMockMvc` is imported from `org.springframework.boot.webmvc.test.autoconfigure`.
+* Jackson 3 is the default. The autoconfigured bean is `tools.jackson.databind.json.JsonMapper`; Jackson 2's `ObjectMapper` is not the autoconfigured bean, so test fields are declared as `JsonMapper`.
+
+`MockMvc` itself remains in the Spring Test API (`org.springframework.test.web.servlet`). IntelliJ may still show a "could not autowire MockMvc" warning; it is IDE inspection lag, and `mvn test` confirms the bean is available.
+
+### 6.19 RabbitMQ Failure Handling and DLQ
+
+RabbitMQ uses:
+
+* `orderflow.orders` — topic exchange
+* `orderflow.notifications` — fanout exchange for notifications
+* `orderflow.dlx` — fanout dead-letter exchange
+
+Order queues are configured with a dead-letter exchange.
+
+The listener container uses `setDefaultRequeueRejected(false)` so permanently failing messages are not requeued indefinitely and instead reach the dead-letter flow.
+
+The dead-letter queue is explicitly bound to the fanout dead-letter exchange. The exchange is a fanout because dead-lettered messages keep their original routing key (`order.created`, `order.paid`, and so on), so a direct exchange would need one binding per key.
+
+`RabbitAdmin` is declared as an explicit bean: Spring Boot 4 only autoconfigures `AmqpAdmin` when `spring.rabbitmq.dynamic=true`, which this project does not set.
+
+### 6.20 Sales Reports
+
+`GenerateSalesReportUseCase` generates an `.xlsx` file using Apache POI.
+
+The workbook contains:
+
+* `Orders` — one row per order in the requested date range
+* `Summary` — aggregation by order status plus a total row
+
+Cancelled orders are included in the date-range report.
+
+The end date is inclusive for the requested calendar day. Currency cells use EUR formatting.
 
 ## 7. RabbitMQ Configuration
 
 ### Exchanges
 
-- orderflow.orders (topic)
-- orderflow.notifications (fanout)
-- orderflow.dlx (dead letter)
+* `orderflow.orders` — TopicExchange
+* `orderflow.notifications` — FanoutExchange
+* `orderflow.dlx` — FanoutExchange
 
 ### Queues
 
-- order.created.queue → routing key: order.created
-- order.paid.queue → routing key: order.paid
-- order.shipped.queue → routing key: order.shipped
-- order.cancelled.queue → routing key: order.cancelled
-- email.notification.queue
-- orderflow.dead-letter.queue
+* `order.created.queue` → `order.created`
+* `order.paid.queue` → `order.paid`
+* `order.shipped.queue` → `order.shipped`
+* `order.cancelled.queue` → `order.cancelled`
+* `email.notification.queue` → fanout notification flow
+* `orderflow.dead-letter.queue` → dead-letter destination
 
-### Dead Letter Queue
+The scheduler publishes the full `OutboxEvent` object using the Jackson 3 compatible `JacksonJsonMessageConverter`.
 
-Failed messages after max retry attempts are routed to orderflow.dlx.
-Allows inspection and replay without data loss.
+### Messaging Consumers
+
+* `OrderCreatedConsumer` — reserves stock
+* `OrderPaidConsumer` — confirms sale
+* `OrderCancelledConsumer` — releases reserved stock
+* `OrderShippedConsumer` — records the processed event
 
 ## 8. Technology Stack
 
 ### Backend
 
-- Java 26
-- Spring Boot 4.0.5
-- Spring Web
-- Spring Data JPA
-- Spring AMQP (RabbitMQ)
-- Spring Security
-- Spring Mail
-- MySQL 8
-- Flyway
-- MapStruct
-- Apache POI
-- Lombok
-- SpringDoc OpenAPI
+* Java 26
+* Spring Boot 4.0.5
+* Spring Web
+* Spring Data JPA
+* Spring AMQP / RabbitMQ
+* Spring Security
+* Spring Mail
+* MySQL 8
+* Flyway
+* MapStruct
+* Apache POI
+* Lombok
+* SpringDoc OpenAPI
 
 ### Testing
 
-- JUnit 5
-- Mockito
-- Testcontainers (MySQL + RabbitMQ)
+* JUnit 5
+* Mockito
+* Testcontainers (MySQL + RabbitMQ)
+* Awaitility for asynchronous messaging assertions
 
 ## 9. Testing Strategy
 
-## 9. Testing Strategy
+| Layer                | Type               | Tool                               | Coverage                                                     |
+| -------------------- | ------------------ | ---------------------------------- | ------------------------------------------------------------ |
+| Domain               | Unit               | JUnit 5                            | 53 tests (9 classes)                                         |
+| Application services | Unit               | JUnit 5 + Mockito                  | 29 tests (6 classes)                                         |
+| Mappers              | Unit               | JUnit 5                            | 9 tests (5 classes)                                          |
+| Reports              | Unit               | JUnit 5 + Mockito                  | ReportServiceTest, 5 tests                                   |
+| Repositories         | Integration        | Testcontainers                     | 29 tests (5 flow suites)                                     |
+| Controllers          | Integration        | Spring Boot Test + MockMvc         | 56 tests (7 classes, real JWTs, includes ReportControllerTest) |
+| Messaging            | Integration        | Testcontainers + RabbitMQ          | MessagingFlowIntegrationTest, 7 tests                        |
 
-| Layer                | Type        | Tool              | Target | Covered By                                 |
-| -------------------- | ----------- | ----------------- | ------ | ------------------------------------------ |
-| Domain models        | Unit        | JUnit 5           | 90%+   | 53 tests across domain/\*                  |
-| Application services | Unit        | JUnit 5 + Mockito | 85%+   | Service test suites                        |
-| Controllers          | Integration | @SpringBootTest   | 80%+   | 47 tests across 7 ControllerTest classes   |
-| RabbitMQ consumers   | Integration | Testcontainers    | 80%+   | MessagingFlowIntegrationTest (6 tests)     |
-| Repositories         | Integration | Testcontainers    | 80%+   | 5 \*FlowIntegrationTest classes (29 tests) |
+Integration tests use real MySQL and RabbitMQ containers. Messaging tests run without `@Transactional` because consumers use a separate database session.
+
+The test suite uses a singleton-container pattern so the same MySQL and RabbitMQ containers remain available across test classes.
+
+Full suite: 189 tests passing (96 unit, 1 application-context load, 29 persistence integration, 56 controller integration, 7 messaging integration).
 
 ## 10. Database Indexes
 
 | Table        | Index           | Purpose                  |
 | ------------ | --------------- | ------------------------ |
-| product      | category_id     | category filtering       |
-| product      | status          | active product queries   |
-| shop_order   | customer_id     | customer order history   |
-| shop_order   | status          | order management queries |
-| shop_order   | idempotency_key | duplicate prevention     |
-| cart         | customer_id     | customer cart lookup     |
-| outbox_event | status          | pending event polling    |
+| product      | category_id     | Category filtering       |
+| product      | status          | Active product queries   |
+| shop_order   | customer_id     | Customer order history   |
+| shop_order   | status          | Order management queries |
+| shop_order   | idempotency_key | Duplicate prevention     |
+| cart         | customer_id     | Customer cart lookup     |
+| outbox_event | status          | Pending event polling    |
