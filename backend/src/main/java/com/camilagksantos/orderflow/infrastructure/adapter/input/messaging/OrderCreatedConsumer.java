@@ -1,10 +1,11 @@
 package com.camilagksantos.orderflow.infrastructure.adapter.input.messaging;
 
+import com.camilagksantos.orderflow.application.port.output.EmailNotificationPort;
+import com.camilagksantos.orderflow.application.port.output.OrderRepositoryPort;
 import com.camilagksantos.orderflow.application.port.output.ProcessedEventRepositoryPort;
 import com.camilagksantos.orderflow.application.port.output.ProductRepositoryPort;
-import com.camilagksantos.orderflow.application.port.output.OrderRepositoryPort;
-import com.camilagksantos.orderflow.domain.order.ShopOrder;
 import com.camilagksantos.orderflow.domain.event.OutboxEvent;
+import com.camilagksantos.orderflow.domain.order.ShopOrder;
 import com.camilagksantos.orderflow.infrastructure.config.RabbitMQConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +20,7 @@ public class OrderCreatedConsumer {
     private final OrderRepositoryPort orderRepositoryPort;
     private final ProductRepositoryPort productRepositoryPort;
     private final ProcessedEventRepositoryPort processedEventRepositoryPort;
+    private final EmailNotificationPort emailNotificationPort;
 
     @RabbitListener(queues = RabbitMQConfig.ORDER_CREATED_QUEUE)
     public void consume(OutboxEvent event) {
@@ -39,6 +41,13 @@ public class OrderCreatedConsumer {
             );
 
             processedEventRepositoryPort.save(event.id());
+
+            try {
+                emailNotificationPort.sendOrderConfirmation(order);
+            } catch (Exception e) {
+                log.error("Failed to send order confirmation email: {}", event.id(), e);
+            }
+
             log.info("Order created event processed: {}", event.id());
         } catch (Exception e) {
             log.error("Failed to process order created event: {}", event.id(), e);

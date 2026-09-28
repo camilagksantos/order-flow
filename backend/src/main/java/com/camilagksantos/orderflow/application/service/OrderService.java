@@ -95,16 +95,28 @@ public class OrderService implements CheckoutUseCase, FindOrderUseCase, UpdateOr
 
     @Override
     @Transactional
-    public ShopOrder updateOrderStatus(String orderId, OrderStatus status) {
+    public ShopOrder updateOrderStatus(String orderId, OrderStatus status, String trackingCode) {
         ShopOrder order = findOrderById(orderId);
         switch (status) {
             case PAID -> order.pay();
             case PREPARING -> order.startPreparing();
-            case SHIPPED -> order.ship(order.getTrackingCode());
+            case SHIPPED -> {
+                if (trackingCode == null || trackingCode.isBlank()) {
+                    throw new BusinessRuleException("Tracking code is required to ship an order");
+                }
+                order.ship(trackingCode);
+            }
             case DELIVERED -> order.deliver();
             default -> throw new BusinessRuleException("Invalid status transition to: " + status);
         }
-        return orderRepositoryPort.save(order);
+        ShopOrder savedOrder = orderRepositoryPort.save(order);
+        if (status == OrderStatus.PAID) {
+            saveOutboxEvent("ORDER_PAID", savedOrder.getId());
+        }
+        if (status == OrderStatus.SHIPPED) {
+            saveOutboxEvent("ORDER_SHIPPED", savedOrder.getId());
+        }
+        return savedOrder;
     }
 
     @Override
@@ -112,6 +124,18 @@ public class OrderService implements CheckoutUseCase, FindOrderUseCase, UpdateOr
     public ShopOrder cancelOrder(String orderId, String reason) {
         ShopOrder order = findOrderById(orderId);
         order.cancel(reason);
-        return orderRepositoryPort.save(order);
+        ShopOrder savedOrder = orderRepositoryPort.save(order);
+        saveOutboxEvent("ORDER_CANCELLED", savedOrder.getId());
+        return savedOrder;
+    }
+
+    private void saveOutboxEvent(String eventType, String orderId) {
+        outboxEventRepositoryPort.save(new OutboxEvent(
+                UUID.randomUUID().toString(),
+                eventType,
+                orderId,
+                OutboxEventStatus.PENDING,
+                LocalDateTime.now()
+        ));
     }
 }

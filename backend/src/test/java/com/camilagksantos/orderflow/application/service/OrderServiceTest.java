@@ -208,6 +208,7 @@ class OrderServiceTest {
         ShopOrder cancelled = orderService.cancelOrder(order.getId(), "Customer request");
 
         verify(orderRepositoryPort).save(any());
+        verify(outboxEventRepositoryPort).save(any());
     }
 
     @Test
@@ -215,8 +216,33 @@ class OrderServiceTest {
         when(orderRepositoryPort.findById(order.getId())).thenReturn(Optional.of(order));
         when(orderRepositoryPort.save(any())).thenReturn(order);
 
-        orderService.updateOrderStatus(order.getId(), OrderStatus.PAID);
+        orderService.updateOrderStatus(order.getId(), OrderStatus.PAID, null);
 
         verify(orderRepositoryPort).save(any());
+        verify(outboxEventRepositoryPort).save(any());
+    }
+
+    @Test
+    void shouldSaveShippedEventWhenStatusChangesToShipped() {
+        order.setStatus(OrderStatus.PREPARING);
+        when(orderRepositoryPort.findById(order.getId())).thenReturn(Optional.of(order));
+        when(orderRepositoryPort.save(any())).thenReturn(order);
+
+        orderService.updateOrderStatus(order.getId(), OrderStatus.SHIPPED, "TRACK-123456");
+
+        assertThat(order.getTrackingCode()).isEqualTo("TRACK-123456");
+        verify(orderRepositoryPort).save(any());
+        verify(outboxEventRepositoryPort).save(any());
+    }
+
+    @Test
+    void shouldThrowWhenShippingWithoutTrackingCode() {
+        order.setStatus(OrderStatus.PREPARING);
+        when(orderRepositoryPort.findById(order.getId())).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> orderService.updateOrderStatus(order.getId(), OrderStatus.SHIPPED, " "))
+                .isInstanceOf(BusinessRuleException.class);
+
+        verify(orderRepositoryPort, never()).save(any());
     }
 }

@@ -238,7 +238,7 @@ class OrderControllerTest extends BaseIntegrationTest {
         Customer customer = persistTestCustomer();
         ShopOrder order = persistTestOrder(customer);
 
-        UpdateOrderStatusRequest request = new UpdateOrderStatusRequest(OrderStatus.PAID);
+        UpdateOrderStatusRequest request = new UpdateOrderStatusRequest(OrderStatus.PAID, null);
 
         mockMvc.perform(patch("/api/v1/orders/" + order.getId() + "/status")
                         .header("Authorization", "Bearer " + token)
@@ -254,7 +254,7 @@ class OrderControllerTest extends BaseIntegrationTest {
         Customer customer = persistTestCustomer();
         ShopOrder order = persistTestOrder(customer);
 
-        UpdateOrderStatusRequest request = new UpdateOrderStatusRequest(OrderStatus.PAID);
+        UpdateOrderStatusRequest request = new UpdateOrderStatusRequest(OrderStatus.PAID, null);
 
         mockMvc.perform(patch("/api/v1/orders/" + order.getId() + "/status")
                         .header("Authorization", "Bearer " + token)
@@ -308,5 +308,43 @@ class OrderControllerTest extends BaseIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void shouldShipOrderWithTrackingCodeAsAdmin() throws Exception {
+        String token = createUserAndGetToken("ADMIN");
+        Customer customer = persistTestCustomer();
+        ShopOrder order = persistTestOrder(customer);
+        order.pay();
+        order.startPreparing();
+        orderJpaAdapter.save(order);
+
+        UpdateOrderStatusRequest request = new UpdateOrderStatusRequest(OrderStatus.SHIPPED, "TRACK-123456");
+
+        mockMvc.perform(patch("/api/v1/orders/" + order.getId() + "/status")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SHIPPED"))
+                .andExpect(jsonPath("$.trackingCode").value("TRACK-123456"));
+    }
+
+    @Test
+    void shouldRejectShipOrderWithoutTrackingCode() throws Exception {
+        String token = createUserAndGetToken("ADMIN");
+        Customer customer = persistTestCustomer();
+        ShopOrder order = persistTestOrder(customer);
+        order.pay();
+        order.startPreparing();
+        orderJpaAdapter.save(order);
+
+        UpdateOrderStatusRequest request = new UpdateOrderStatusRequest(OrderStatus.SHIPPED, null);
+
+        mockMvc.perform(patch("/api/v1/orders/" + order.getId() + "/status")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnprocessableEntity());
     }
 }

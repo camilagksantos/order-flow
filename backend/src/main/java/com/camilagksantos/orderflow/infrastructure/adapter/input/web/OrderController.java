@@ -54,7 +54,7 @@ public class OrderController {
             @PathVariable String id,
             @Valid @RequestBody UpdateOrderStatusRequest request) {
         return ResponseEntity.ok(orderMapper.toResponse(
-                updateOrderStatusUseCase.updateOrderStatus(id, request.status())));
+                updateOrderStatusUseCase.updateOrderStatus(id, request.status(), request.trackingCode())));
     }
 
     @PostMapping("/{id}/cancel")

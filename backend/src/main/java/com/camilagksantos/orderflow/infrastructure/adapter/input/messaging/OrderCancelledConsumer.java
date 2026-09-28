@@ -1,5 +1,6 @@
 package com.camilagksantos.orderflow.infrastructure.adapter.input.messaging;
 
+import com.camilagksantos.orderflow.application.port.output.EmailNotificationPort;
 import com.camilagksantos.orderflow.application.port.output.OrderRepositoryPort;
 import com.camilagksantos.orderflow.application.port.output.ProcessedEventRepositoryPort;
 import com.camilagksantos.orderflow.application.port.output.ProductRepositoryPort;
@@ -19,6 +20,7 @@ public class OrderCancelledConsumer {
     private final OrderRepositoryPort orderRepositoryPort;
     private final ProductRepositoryPort productRepositoryPort;
     private final ProcessedEventRepositoryPort processedEventRepositoryPort;
+    private final EmailNotificationPort emailNotificationPort;
 
     @RabbitListener(queues = RabbitMQConfig.ORDER_CANCELLED_QUEUE)
     public void consume(OutboxEvent event) {
@@ -39,6 +41,13 @@ public class OrderCancelledConsumer {
             );
 
             processedEventRepositoryPort.save(event.id());
+
+            try {
+                emailNotificationPort.sendOrderCancelled(order);
+            } catch (Exception e) {
+                log.error("Failed to send order cancelled email: {}", event.id(), e);
+            }
+
             log.info("Order cancelled event processed: {}", event.id());
         } catch (Exception e) {
             log.error("Failed to process order cancelled event: {}", event.id(), e);
