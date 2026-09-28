@@ -2,6 +2,7 @@ package com.camilagksantos.orderflow.infrastructure.adapter.input.web;
 
 import com.camilagksantos.orderflow.application.dto.request.LoginRequest;
 import com.camilagksantos.orderflow.application.dto.response.TokenResponse;
+import com.camilagksantos.orderflow.application.port.output.CustomerRepositoryPort;
 import com.camilagksantos.orderflow.infrastructure.config.security.JwtService;
 import com.camilagksantos.orderflow.infrastructure.config.security.UserDetailsServiceImpl;
 import jakarta.validation.Valid;
@@ -9,9 +10,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.Map;
 
 @RestController
@@ -22,6 +25,7 @@ public class AuthController {
     private final AuthenticationManager authenticationManager;
     private final UserDetailsServiceImpl userDetailsService;
     private final JwtService jwtService;
+    private final CustomerRepositoryPort customerRepositoryPort;
 
     @PostMapping("/login")
     public ResponseEntity<TokenResponse> login(@Valid @RequestBody LoginRequest request) {
@@ -30,12 +34,7 @@ public class AuthController {
         );
 
         UserDetails userDetails = userDetailsService.loadUserByUsername(request.email());
-
-        Map<String, Object> claims = Map.of(
-                "roles", userDetails.getAuthorities().stream()
-                        .map(a -> a.getAuthority())
-                        .toList()
-        );
+        Map<String, Object> claims = buildClaims(userDetails);
 
         String accessToken = jwtService.generateAccessToken(userDetails, claims);
         String refreshToken = jwtService.generateRefreshToken(userDetails);
@@ -53,15 +52,23 @@ public class AuthController {
             return ResponseEntity.status(401).build();
         }
 
-        Map<String, Object> claims = Map.of(
-                "roles", userDetails.getAuthorities().stream()
-                        .map(a -> a.getAuthority())
-                        .toList()
-        );
+        Map<String, Object> claims = buildClaims(userDetails);
 
         String newAccessToken = jwtService.generateAccessToken(userDetails, claims);
         String newRefreshToken = jwtService.generateRefreshToken(userDetails);
 
         return ResponseEntity.ok(new TokenResponse(newAccessToken, newRefreshToken, "Bearer", 900));
+    }
+
+    private Map<String, Object> buildClaims(UserDetails userDetails) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("roles", userDetails.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .toList());
+
+        customerRepositoryPort.findByEmail(userDetails.getUsername())
+                .ifPresent(customer -> claims.put("customerId", customer.getId()));
+
+        return claims;
     }
 }

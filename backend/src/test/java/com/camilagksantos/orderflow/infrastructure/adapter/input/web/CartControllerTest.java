@@ -100,7 +100,7 @@ class CartControllerTest extends BaseIntegrationTest {
         customerId = customerJpaAdapter.save(customer).getId();
 
         UserDetails userDetails = userDetailsService.loadUserByUsername(email);
-        token = jwtService.generateAccessToken(userDetails, Map.of());
+        token = jwtService.generateAccessToken(userDetails, Map.of("customerId", customerId));
     }
 
     private Long persistTestProduct() {
@@ -215,5 +215,15 @@ class CartControllerTest extends BaseIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("PENDING"))
                 .andExpect(jsonPath("$.paymentMethod").value("MBWAY"));
+    }
+
+    @Test
+    void shouldRejectAccessToAnotherCustomersCart() throws Exception {
+        setUpCustomerWithToken();
+        Long otherCustomerId = customerId + 1;
+
+        mockMvc.perform(get("/api/v1/carts/customer/" + otherCustomerId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
     }
 }

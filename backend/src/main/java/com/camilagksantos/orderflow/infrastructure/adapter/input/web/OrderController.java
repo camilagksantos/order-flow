@@ -7,6 +7,8 @@ import com.camilagksantos.orderflow.application.mapper.OrderMapper;
 import com.camilagksantos.orderflow.application.port.input.CancelOrderUseCase;
 import com.camilagksantos.orderflow.application.port.input.FindOrderUseCase;
 import com.camilagksantos.orderflow.application.port.input.UpdateOrderStatusUseCase;
+import com.camilagksantos.orderflow.domain.order.ShopOrder;
+import com.camilagksantos.orderflow.infrastructure.config.security.SecurityUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -36,10 +38,9 @@ public class OrderController {
 
     @GetMapping("/customer/{customerId}")
     public ResponseEntity<List<OrderResponse>> findByCustomerId(@PathVariable Long customerId) {
-        List<OrderResponse> orders = findOrderUseCase.findOrdersByCustomerId(customerId).stream()
-                .map(orderMapper::toResponse)
-                .toList();
-        return ResponseEntity.ok(orders);
+        SecurityUtils.requireCustomerAccess(customerId);
+        List<ShopOrder> orders = findOrderUseCase.findOrdersByCustomerId(customerId);
+        return ResponseEntity.ok(orders.stream().map(orderMapper::toResponse).toList());
     }
 
     @PatchMapping("/{id}/status")

@@ -21,7 +21,6 @@ import com.camilagksantos.orderflow.infrastructure.persistence.entity.RoleEntity
 import com.camilagksantos.orderflow.infrastructure.persistence.entity.UserEntity;
 import com.camilagksantos.orderflow.infrastructure.persistence.repository.RoleJpaRepository;
 import com.camilagksantos.orderflow.infrastructure.persistence.repository.UserJpaRepository;
-import tools.jackson.databind.json.JsonMapper;
 import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,9 +29,11 @@ import org.springframework.http.MediaType;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -72,6 +73,10 @@ class OrderControllerTest extends BaseIntegrationTest {
     private UserDetailsServiceImpl userDetailsService;
 
     private String createUserAndGetToken(String roleName) {
+        return createUserAndGetToken(roleName, null);
+    }
+
+    private String createUserAndGetToken(String roleName, Long customerId) {
         String email = "user-" + UUID.randomUUID() + "@example.com";
         RoleEntity role = roleJpaRepository.findByName(roleName).orElseThrow();
 
@@ -82,8 +87,13 @@ class OrderControllerTest extends BaseIntegrationTest {
         user.setRoles(List.of(role));
         userJpaRepository.save(user);
 
+        Map<String, Object> claims = new HashMap<>();
+        if (customerId != null) {
+            claims.put("customerId", customerId);
+        }
+
         UserDetails userDetails = userDetailsService.loadUserByUsername(email);
-        return jwtService.generateAccessToken(userDetails, Map.of());
+        return jwtService.generateAccessToken(userDetails, claims);
     }
 
     private Customer persistTestCustomer() {
@@ -158,8 +168,8 @@ class OrderControllerTest extends BaseIntegrationTest {
 
     @Test
     void shouldFindOrdersByCustomerId() throws Exception {
-        String token = createUserAndGetToken("CUSTOMER");
         Customer customer = persistTestCustomer();
+        String token = createUserAndGetToken("CUSTOMER", customer.getId());
         persistTestOrder(customer);
         persistTestOrder(customer);
 
@@ -167,6 +177,16 @@ class OrderControllerTest extends BaseIntegrationTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2));
+    }
+
+    @Test
+    void shouldRejectFindOrdersOfAnotherCustomer() throws Exception {
+        Customer customer = persistTestCustomer();
+        String token = createUserAndGetToken("CUSTOMER", customer.getId());
+
+        mockMvc.perform(get("/api/v1/orders/customer/" + (customer.getId() + 1))
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
     }
 
     @Test

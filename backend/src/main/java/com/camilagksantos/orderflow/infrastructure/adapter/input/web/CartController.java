@@ -13,6 +13,7 @@ import com.camilagksantos.orderflow.application.port.input.RemoveFromCartUseCase
 import com.camilagksantos.orderflow.domain.cart.Cart;
 import com.camilagksantos.orderflow.domain.cart.CartItem;
 import com.camilagksantos.orderflow.domain.order.ShopOrder;
+import com.camilagksantos.orderflow.infrastructure.config.security.SecurityUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -35,6 +36,7 @@ public class CartController {
 
     @GetMapping("/customer/{customerId}")
     public ResponseEntity<CartResponse> findByCustomerId(@PathVariable Long customerId) {
+        SecurityUtils.requireCustomerAccess(customerId);
         Cart cart = findCartUseCase.findCartByCustomerId(customerId);
         return ResponseEntity.ok(cartMapper.toResponse(cart));
     }
@@ -43,6 +45,7 @@ public class CartController {
     public ResponseEntity<CartResponse> addItem(
             @PathVariable Long customerId,
             @Valid @RequestBody AddToCartRequest request) {
+        SecurityUtils.requireCustomerAccess(customerId);
         Cart cart = addToCartUseCase.addToCart(customerId, request.productId(), request.quantity());
         return ResponseEntity.status(HttpStatus.CREATED).body(cartMapper.toResponse(cart));
     }
@@ -51,6 +54,7 @@ public class CartController {
     public ResponseEntity<CartResponse> removeItem(
             @PathVariable Long customerId,
             @PathVariable String itemId) {
+        SecurityUtils.requireCustomerAccess(customerId);
         Cart cart = removeFromCartUseCase.removeFromCart(customerId, itemId);
         return ResponseEntity.ok(cartMapper.toResponse(cart));
     }
@@ -59,6 +63,7 @@ public class CartController {
     public ResponseEntity<OrderResponse> checkout(
             @PathVariable Long customerId,
             @Valid @RequestBody CheckoutRequest request) {
+        SecurityUtils.requireCustomerAccess(customerId);
         ShopOrder order = checkoutUseCase.checkout(customerId, request.idempotencyKey(), request.paymentMethod());
         return ResponseEntity.status(HttpStatus.CREATED).body(orderMapper.toResponse(order));
     }

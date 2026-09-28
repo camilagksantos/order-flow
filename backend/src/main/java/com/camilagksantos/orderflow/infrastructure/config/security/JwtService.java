@@ -79,4 +79,10 @@ public class JwtService {
     private SecretKey getSigningKey() {
         return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
+
+    public Long extractCustomerId(String token) {
+        Claims claims = extractAllClaims(token);
+        Object customerId = claims.get("customerId");
+        return customerId != null ? Long.valueOf(customerId.toString()) : null;
+    }
 }
