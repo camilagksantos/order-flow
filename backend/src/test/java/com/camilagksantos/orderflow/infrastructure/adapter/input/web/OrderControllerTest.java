@@ -144,8 +144,8 @@ class OrderControllerTest extends BaseIntegrationTest {
 
     @Test
     void shouldFindOrderById() throws Exception {
-        String token = createUserAndGetToken("CUSTOMER");
         Customer customer = persistTestCustomer();
+        String token = createUserAndGetToken("CUSTOMER", customer.getId());
         ShopOrder order = persistTestOrder(customer);
 
         mockMvc.perform(get("/api/v1/orders/" + order.getId())
@@ -155,15 +155,49 @@ class OrderControllerTest extends BaseIntegrationTest {
     }
 
     @Test
-    void shouldFindOrderByOrderNumber() throws Exception {
-        String token = createUserAndGetToken("CUSTOMER");
+    void shouldRejectFindOrderByIdOfAnotherCustomer() throws Exception {
         Customer customer = persistTestCustomer();
+        String token = createUserAndGetToken("CUSTOMER", customer.getId() + 1);
+        ShopOrder order = persistTestOrder(customer);
+
+        mockMvc.perform(get("/api/v1/orders/" + order.getId())
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void shouldAllowAdminToFindAnyOrder() throws Exception {
+        String token = createUserAndGetToken("ADMIN");
+        Customer customer = persistTestCustomer();
+        ShopOrder order = persistTestOrder(customer);
+
+        mockMvc.perform(get("/api/v1/orders/" + order.getId())
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(order.getId()));
+    }
+
+    @Test
+    void shouldFindOrderByOrderNumber() throws Exception {
+        Customer customer = persistTestCustomer();
+        String token = createUserAndGetToken("CUSTOMER", customer.getId());
         ShopOrder order = persistTestOrder(customer);
 
         mockMvc.perform(get("/api/v1/orders/number/" + order.getOrderNumber())
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(order.getId()));
+    }
+
+    @Test
+    void shouldRejectFindOrderByNumberOfAnotherCustomer() throws Exception {
+        Customer customer = persistTestCustomer();
+        String token = createUserAndGetToken("CUSTOMER", customer.getId() + 1);
+        ShopOrder order = persistTestOrder(customer);
+
+        mockMvc.perform(get("/api/v1/orders/number/" + order.getOrderNumber())
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -231,8 +265,8 @@ class OrderControllerTest extends BaseIntegrationTest {
 
     @Test
     void shouldCancelOrder() throws Exception {
-        String token = createUserAndGetToken("CUSTOMER");
         Customer customer = persistTestCustomer();
+        String token = createUserAndGetToken("CUSTOMER", customer.getId());
         ShopOrder order = persistTestOrder(customer);
 
         CancelOrderRequest request = new CancelOrderRequest("Changed my mind");
@@ -244,6 +278,21 @@ class OrderControllerTest extends BaseIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CANCELLED"))
                 .andExpect(jsonPath("$.cancelReason").value("Changed my mind"));
+    }
+
+    @Test
+    void shouldRejectCancelOrderOfAnotherCustomer() throws Exception {
+        Customer customer = persistTestCustomer();
+        String token = createUserAndGetToken("CUSTOMER", customer.getId() + 1);
+        ShopOrder order = persistTestOrder(customer);
+
+        CancelOrderRequest request = new CancelOrderRequest("Not my order");
+
+        mockMvc.perform(post("/api/v1/orders/" + order.getId() + "/cancel")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden());
     }
 
     @Test

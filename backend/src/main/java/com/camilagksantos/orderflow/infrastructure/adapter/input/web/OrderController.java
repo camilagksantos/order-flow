@@ -28,19 +28,25 @@ public class OrderController {
 
     @GetMapping("/{id}")
     public ResponseEntity<OrderResponse> findById(@PathVariable String id) {
-        return ResponseEntity.ok(orderMapper.toResponse(findOrderUseCase.findOrderById(id)));
+        ShopOrder order = findOrderUseCase.findOrderById(id);
+        SecurityUtils.requireOrderAccess(order.getCustomerId());
+        return ResponseEntity.ok(orderMapper.toResponse(order));
     }
 
     @GetMapping("/number/{orderNumber}")
     public ResponseEntity<OrderResponse> findByOrderNumber(@PathVariable String orderNumber) {
-        return ResponseEntity.ok(orderMapper.toResponse(findOrderUseCase.findOrderByNumber(orderNumber)));
+        ShopOrder order = findOrderUseCase.findOrderByNumber(orderNumber);
+        SecurityUtils.requireOrderAccess(order.getCustomerId());
+        return ResponseEntity.ok(orderMapper.toResponse(order));
     }
 
     @GetMapping("/customer/{customerId}")
     public ResponseEntity<List<OrderResponse>> findByCustomerId(@PathVariable Long customerId) {
         SecurityUtils.requireCustomerAccess(customerId);
-        List<ShopOrder> orders = findOrderUseCase.findOrdersByCustomerId(customerId);
-        return ResponseEntity.ok(orders.stream().map(orderMapper::toResponse).toList());
+        List<OrderResponse> orders = findOrderUseCase.findOrdersByCustomerId(customerId).stream()
+                .map(orderMapper::toResponse)
+                .toList();
+        return ResponseEntity.ok(orders);
     }
 
     @PatchMapping("/{id}/status")
@@ -55,6 +61,8 @@ public class OrderController {
     public ResponseEntity<OrderResponse> cancel(
             @PathVariable String id,
             @Valid @RequestBody CancelOrderRequest request) {
+        ShopOrder order = findOrderUseCase.findOrderById(id);
+        SecurityUtils.requireOrderAccess(order.getCustomerId());
         return ResponseEntity.ok(orderMapper.toResponse(
                 cancelOrderUseCase.cancelOrder(id, request.reason())));
     }
