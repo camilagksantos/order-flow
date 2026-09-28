@@ -4,6 +4,7 @@ import com.camilagksantos.orderflow.BaseIntegrationTest;
 import com.camilagksantos.orderflow.application.dto.request.AddToCartRequest;
 import com.camilagksantos.orderflow.application.dto.request.CheckoutRequest;
 import com.camilagksantos.orderflow.domain.category.Category;
+import com.camilagksantos.orderflow.domain.customer.Address;
 import com.camilagksantos.orderflow.domain.customer.Customer;
 import com.camilagksantos.orderflow.domain.customer.CustomerStatus;
 import com.camilagksantos.orderflow.domain.order.PaymentMethod;
@@ -76,6 +77,7 @@ class CartControllerTest extends BaseIntegrationTest {
 
     private String token;
     private Long customerId;
+    private Long addressId;
 
     private void setUpCustomerWithToken() {
         String email = "user-" + UUID.randomUUID() + "@example.com";
@@ -95,9 +97,20 @@ class CartControllerTest extends BaseIntegrationTest {
                 .nif(new NIF("123456789"))
                 .phone("912345678")
                 .status(CustomerStatus.ACTIVE)
-                .addresses(new ArrayList<>())
+                .addresses(new ArrayList<>(List.of(Address.builder()
+                        .street("Rua das Flores")
+                        .number("10")
+                        .neighborhood("Baixa")
+                        .city("Lisboa")
+                        .district("Lisboa")
+                        .postalCode("1100-000")
+                        .country("PT")
+                        .defaultAddress(true)
+                        .build())))
                 .build();
-        customerId = customerJpaAdapter.save(customer).getId();
+        Customer savedCustomer = customerJpaAdapter.save(customer);
+        customerId = savedCustomer.getId();
+        addressId = savedCustomer.getAddresses().get(0).getId();
 
         UserDetails userDetails = userDetailsService.loadUserByUsername(email);
         token = jwtService.generateAccessToken(userDetails, Map.of("customerId", customerId));
@@ -205,7 +218,7 @@ class CartControllerTest extends BaseIntegrationTest {
                 .andExpect(status().isCreated());
 
         CheckoutRequest checkoutRequest = new CheckoutRequest(
-                UUID.randomUUID().toString(), 1L, PaymentMethod.MBWAY
+                UUID.randomUUID().toString(), addressId, PaymentMethod.MBWAY
         );
 
         mockMvc.perform(post("/api/v1/carts/customer/" + customerId + "/checkout")
@@ -214,7 +227,32 @@ class CartControllerTest extends BaseIntegrationTest {
                         .content(objectMapper.writeValueAsString(checkoutRequest)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("PENDING"))
-                .andExpect(jsonPath("$.paymentMethod").value("MBWAY"));
+                .andExpect(jsonPath("$.paymentMethod").value("MBWAY"))
+                .andExpect(jsonPath("$.deliveryStreet").value("Rua das Flores"))
+                .andExpect(jsonPath("$.deliveryCity").value("Lisboa"))
+                .andExpect(jsonPath("$.deliveryPostalCode").value("1100-000"));
+    }
+
+    @Test
+    void shouldRejectCheckoutWithUnknownAddress() throws Exception {
+        setUpCustomerWithToken();
+        Long productId = persistTestProduct();
+
+        mockMvc.perform(post("/api/v1/carts/customer/" + customerId + "/items")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new AddToCartRequest(productId, 1))))
+                .andExpect(status().isCreated());
+
+        CheckoutRequest checkoutRequest = new CheckoutRequest(
+                UUID.randomUUID().toString(), addressId + 1000L, PaymentMethod.MBWAY
+        );
+
+        mockMvc.perform(post("/api/v1/carts/customer/" + customerId + "/checkout")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(checkoutRequest)))
+                .andExpect(status().isUnprocessableEntity());
     }
 
     @Test

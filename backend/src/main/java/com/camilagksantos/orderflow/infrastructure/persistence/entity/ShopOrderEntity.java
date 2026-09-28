@@ -60,6 +60,30 @@ public class ShopOrderEntity {
     @Column(length = 500)
     private String cancelReason;
 
+    @Column(length = 200)
+    private String deliveryStreet;
+
+    @Column(length = 20)
+    private String deliveryNumber;
+
+    @Column(length = 100)
+    private String deliveryComplement;
+
+    @Column(length = 100)
+    private String deliveryNeighborhood;
+
+    @Column(length = 100)
+    private String deliveryCity;
+
+    @Column(length = 50)
+    private String deliveryDistrict;
+
+    @Column(length = 8)
+    private String deliveryPostalCode;
+
+    @Column(length = 2)
+    private String deliveryCountry;
+
     @Column(nullable = false, unique = true, length = 36)
     private String idempotencyKey;
 

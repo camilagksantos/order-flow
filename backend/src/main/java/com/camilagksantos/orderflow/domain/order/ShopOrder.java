@@ -1,6 +1,7 @@
 package com.camilagksantos.orderflow.domain.order;
 
 import com.camilagksantos.orderflow.domain.cart.Cart;
+import com.camilagksantos.orderflow.domain.customer.Address;
 import com.camilagksantos.orderflow.domain.shared.Money;
 import com.camilagksantos.orderflow.domain.exception.InvalidOrderStatusTransitionException;
 import lombok.AllArgsConstructor;
@@ -34,6 +35,14 @@ public class ShopOrder {
     private String trackingCode;
     private String cancelReason;
     private String idempotencyKey;
+    private String deliveryStreet;
+    private String deliveryNumber;
+    private String deliveryComplement;
+    private String deliveryNeighborhood;
+    private String deliveryCity;
+    private String deliveryDistrict;
+    private String deliveryPostalCode;
+    private String deliveryCountry;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private LocalDateTime paidAt;
@@ -74,6 +83,18 @@ public class ShopOrder {
         this.status = OrderStatus.CANCELLED;
         this.cancelReason = reason;
         this.cancelledAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public void assignDeliveryAddress(Address address) {
+        this.deliveryStreet = address.getStreet();
+        this.deliveryNumber = address.getNumber();
+        this.deliveryComplement = address.getComplement();
+        this.deliveryNeighborhood = address.getNeighborhood();
+        this.deliveryCity = address.getCity();
+        this.deliveryDistrict = address.getDistrict();
+        this.deliveryPostalCode = address.getPostalCode();
+        this.deliveryCountry = address.getCountry();
         this.updatedAt = LocalDateTime.now();
     }
 

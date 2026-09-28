@@ -9,6 +9,7 @@ import com.camilagksantos.orderflow.application.port.output.CustomerRepositoryPo
 import com.camilagksantos.orderflow.application.port.output.OrderRepositoryPort;
 import com.camilagksantos.orderflow.application.port.output.OutboxEventRepositoryPort;
 import com.camilagksantos.orderflow.domain.cart.Cart;
+import com.camilagksantos.orderflow.domain.customer.Address;
 import com.camilagksantos.orderflow.domain.customer.Customer;
 import com.camilagksantos.orderflow.domain.event.OutboxEvent;
 import com.camilagksantos.orderflow.domain.event.OutboxEventStatus;
@@ -38,7 +39,7 @@ public class OrderService implements CheckoutUseCase, FindOrderUseCase, UpdateOr
 
     @Override
     @Transactional
-    public ShopOrder checkout(Long customerId, String idempotencyKey, PaymentMethod paymentMethod) {
+    public ShopOrder checkout(Long customerId, String idempotencyKey, Long addressId, PaymentMethod paymentMethod) {
         orderRepositoryPort.findByIdempotencyKey(idempotencyKey)
                 .ifPresent(order -> {
                     throw new BusinessRuleException("Order already exists for idempotency key: " + idempotencyKey);
@@ -52,7 +53,14 @@ public class OrderService implements CheckoutUseCase, FindOrderUseCase, UpdateOr
         Customer customer = customerRepositoryPort.findById(customerId)
                 .orElseThrow(() -> new CustomerNotFoundException(customerId));
 
+        List<Address> addresses = customer.getAddresses() != null ? customer.getAddresses() : List.of();
+        Address deliveryAddress = addresses.stream()
+                .filter(address -> addressId.equals(address.getId()))
+                .findFirst()
+                .orElseThrow(() -> new BusinessRuleException("Address not found for customer: " + addressId));
+
         ShopOrder order = ShopOrder.fromCart(cart, idempotencyKey, customer.getEmail().value(), paymentMethod);
+        order.assignDeliveryAddress(deliveryAddress);
         ShopOrder savedOrder = orderRepositoryPort.save(order);
 
         outboxEventRepositoryPort.save(new OutboxEvent(

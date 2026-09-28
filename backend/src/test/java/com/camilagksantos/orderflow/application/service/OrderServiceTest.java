@@ -7,6 +7,7 @@ import com.camilagksantos.orderflow.application.port.output.OutboxEventRepositor
 import com.camilagksantos.orderflow.domain.cart.Cart;
 import com.camilagksantos.orderflow.domain.cart.CartItem;
 import com.camilagksantos.orderflow.domain.cart.CartStatus;
+import com.camilagksantos.orderflow.domain.customer.Address;
 import com.camilagksantos.orderflow.domain.customer.Customer;
 import com.camilagksantos.orderflow.domain.customer.CustomerStatus;
 import com.camilagksantos.orderflow.domain.exception.BusinessRuleException;
@@ -85,7 +86,17 @@ class OrderServiceTest {
                 .email(new Email("camila@test.com"))
                 .nif(new NIF("123456789"))
                 .status(CustomerStatus.ACTIVE)
-                .addresses(List.of())
+                .addresses(List.of(Address.builder()
+                        .id(10L)
+                        .customerId(1L)
+                        .street("Rua das Flores")
+                        .number("10")
+                        .neighborhood("Baixa")
+                        .city("Lisboa")
+                        .district("Lisboa")
+                        .postalCode("1100-000")
+                        .country("PT")
+                        .build()))
                 .build();
 
         order = ShopOrder.builder()
@@ -116,7 +127,7 @@ class OrderServiceTest {
         when(outboxEventRepositoryPort.save(any())).thenReturn(null);
         when(cartRepositoryPort.save(any())).thenReturn(cart);
 
-        ShopOrder result = orderService.checkout(1L, idempotencyKey, PaymentMethod.MBWAY);
+        ShopOrder result = orderService.checkout(1L, idempotencyKey, 10L, PaymentMethod.MBWAY);
 
         assertThat(result).isNotNull();
         assertThat(result.getOrderNumber()).isEqualTo("ORD-TEST-001");
@@ -139,7 +150,7 @@ class OrderServiceTest {
         when(orderRepositoryPort.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.empty());
         when(cartRepositoryPort.findActiveByCustomerId(1L)).thenReturn(Optional.of(emptyCart));
 
-        assertThatThrownBy(() -> orderService.checkout(1L, idempotencyKey, PaymentMethod.MBWAY))
+        assertThatThrownBy(() -> orderService.checkout(1L, idempotencyKey, 10L, PaymentMethod.MBWAY))
                 .isInstanceOf(BusinessRuleException.class);
     }
 
@@ -149,7 +160,7 @@ class OrderServiceTest {
         when(orderRepositoryPort.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.empty());
         when(cartRepositoryPort.findActiveByCustomerId(1L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> orderService.checkout(1L, idempotencyKey, PaymentMethod.MBWAY))
+        assertThatThrownBy(() -> orderService.checkout(1L, idempotencyKey, 10L, PaymentMethod.MBWAY))
                 .isInstanceOf(CartNotFoundException.class);
     }
 
@@ -158,8 +169,21 @@ class OrderServiceTest {
         String idempotencyKey = UUID.randomUUID().toString();
         when(orderRepositoryPort.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.of(order));
 
-        assertThatThrownBy(() -> orderService.checkout(1L, idempotencyKey, PaymentMethod.MBWAY))
+        assertThatThrownBy(() -> orderService.checkout(1L, idempotencyKey, 10L, PaymentMethod.MBWAY))
                 .isInstanceOf(BusinessRuleException.class);
+    }
+
+    @Test
+    void shouldThrowWhenAddressDoesNotBelongToCustomer() {
+        String idempotencyKey = UUID.randomUUID().toString();
+        when(orderRepositoryPort.findByIdempotencyKey(idempotencyKey)).thenReturn(Optional.empty());
+        when(cartRepositoryPort.findActiveByCustomerId(1L)).thenReturn(Optional.of(cart));
+        when(customerRepositoryPort.findById(1L)).thenReturn(Optional.of(customer));
+
+        assertThatThrownBy(() -> orderService.checkout(1L, idempotencyKey, 99L, PaymentMethod.MBWAY))
+                .isInstanceOf(BusinessRuleException.class);
+
+        verify(orderRepositoryPort, never()).save(any());
     }
 
     @Test

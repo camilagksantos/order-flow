@@ -25,5 +25,13 @@ public record OrderResponse(
         LocalDateTime paidAt,
         LocalDateTime shippedAt,
         LocalDateTime deliveredAt,
-        LocalDateTime cancelledAt
+        LocalDateTime cancelledAt,
+        String deliveryStreet,
+        String deliveryNumber,
+        String deliveryComplement,
+        String deliveryNeighborhood,
+        String deliveryCity,
+        String deliveryDistrict,
+        String deliveryPostalCode,
+        String deliveryCountry
 ) {}

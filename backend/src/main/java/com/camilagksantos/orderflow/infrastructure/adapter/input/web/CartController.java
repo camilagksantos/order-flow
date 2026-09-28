@@ -64,7 +64,7 @@ public class CartController {
             @PathVariable Long customerId,
             @Valid @RequestBody CheckoutRequest request) {
         SecurityUtils.requireCustomerAccess(customerId);
-        ShopOrder order = checkoutUseCase.checkout(customerId, request.idempotencyKey(), request.paymentMethod());
+        ShopOrder order = checkoutUseCase.checkout(customerId, request.idempotencyKey(), request.addressId(), request.paymentMethod());
         return ResponseEntity.status(HttpStatus.CREATED).body(orderMapper.toResponse(order));
     }
 }

@@ -3,6 +3,7 @@ package com.camilagksantos.orderflow.infrastructure.adapter.output.persistence;
 import com.camilagksantos.orderflow.BaseIntegrationTest;
 import com.camilagksantos.orderflow.domain.cart.Cart;
 import com.camilagksantos.orderflow.domain.cart.CartItem;
+import com.camilagksantos.orderflow.domain.customer.Address;
 import com.camilagksantos.orderflow.domain.customer.Customer;
 import com.camilagksantos.orderflow.domain.customer.CustomerStatus;
 import com.camilagksantos.orderflow.domain.order.OrderStatus;
@@ -100,6 +101,27 @@ class OrderFlowIntegrationTest extends BaseIntegrationTest {
         assertThat(saved.getItems()).hasSize(1);
         assertThat(saved.getItems().get(0).getProductName()).isEqualTo("Laptop");
         assertThat(saved.getItems().get(0).getSubtotal().amount()).isEqualByComparingTo(BigDecimal.valueOf(1998));
+    }
+
+    @Test
+    void shouldPersistDeliveryAddressSnapshot() {
+        Customer customer = persistTestCustomer();
+        ShopOrder order = buildOrderFromCart(customer);
+        order.assignDeliveryAddress(Address.builder()
+                .street("Rua das Flores")
+                .number("10")
+                .neighborhood("Baixa")
+                .city("Lisboa")
+                .district("Lisboa")
+                .postalCode("1100-000")
+                .country("PT")
+                .build());
+
+        ShopOrder saved = orderJpaAdapter.save(order);
+
+        assertThat(saved.getDeliveryStreet()).isEqualTo("Rua das Flores");
+        assertThat(saved.getDeliveryPostalCode()).isEqualTo("1100-000");
+        assertThat(saved.getDeliveryCountry()).isEqualTo("PT");
     }
 
     @Test

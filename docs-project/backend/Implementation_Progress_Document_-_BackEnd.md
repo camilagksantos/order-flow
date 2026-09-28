@@ -35,6 +35,7 @@ Implemented migrations:
 * `V2__rename_address_is_default_column.sql`
 * `V3__add_customer_email_to_shop_order.sql`
 * `V4__seed_roles.sql`
+* `V5__add_delivery_address_to_shop_order.sql`
 
 Current database decisions:
 
@@ -45,6 +46,7 @@ Current database decisions:
 * Portugal localisation using NIF, district, postal code and default country PT
 * Cart has no expiration
 * V4 seeds `ADMIN` and `CUSTOMER` roles using `INSERT IGNORE`
+* V5 adds nullable `delivery_*` columns to `shop_order` for the delivery address snapshot; nullable because existing orders have no address
 
 ## 3. Application Configuration
 
@@ -268,7 +270,7 @@ Important request details:
 
 * `UpdateProductRequest` does not expose SKU because SKU is immutable.
 * `AddToCartRequest` contains only `productId` and `quantity`; price/name/SKU are populated server-side.
-* `CheckoutRequest` contains `idempotencyKey`, `addressId` and `paymentMethod`. The checkout flow currently does not read `addressId` (see Known Issues).
+* `CheckoutRequest` contains `idempotencyKey`, `addressId` and `paymentMethod`. `addressId` must belong to the authenticated customer and is snapshotted onto the order.
 * `RegisterCustomerRequest` contains the password used to create the associated User.
 
 ### Response DTOs
@@ -285,7 +287,7 @@ Important request details:
 * TokenResponse
 * ErrorResponse
 
-`OrderResponse` includes `cancelReason` together with status, items, amounts, payment method, tracking code and timestamps.
+`OrderResponse` includes `cancelReason` and the `delivery*` address fields together with status, items, amounts, payment method, tracking code and timestamps.
 
 ### REST Controllers
 
@@ -464,10 +466,10 @@ Five flow suites:
 * ProductFlowIntegrationTest — 5 tests
 * CustomerFlowIntegrationTest — 5 tests
 * CartFlowIntegrationTest — 7 tests
-* OrderFlowIntegrationTest — 8 tests
+* OrderFlowIntegrationTest — 9 tests
 * PaymentFlowIntegrationTest — 4 tests
 
-Total persistence integration tests: 29.
+Total persistence integration tests: 30.
 
 Testcontainers provide real MySQL and RabbitMQ infrastructure. The containers use the singleton pattern and are started manually from static fields so JUnit does not stop them between test classes.
 
@@ -505,14 +507,18 @@ Messaging tests do not use `@Transactional` because the RabbitMQ consumer uses i
 
 `ReportServiceTest` (5 tests) covers workbook structure and aggregation. `ReportControllerTest` (5 tests) covers authorisation and validates the returned XLSX content.
 
+### Address-in-Checkout Tests
+
+`OrderServiceTest.shouldThrowWhenAddressDoesNotBelongToCustomer`, `CartControllerTest.shouldRejectCheckoutWithUnknownAddress` (422) and `OrderFlowIntegrationTest.shouldPersistDeliveryAddressSnapshot`. `CartControllerTest.shouldCheckoutCart` now checks the delivery fields in the response.
+
 ### Full Suite
 
-189 tests, all passing:
+192 tests, all passing:
 
-* Unit — 96: domain 53 (ShopOrder 9, Product 9, Cart 8, Money 8, Email 6, NIF 6, Payment 3, CartItem 2, Customer 2), application services 29 (Order 8, Product 6, Cart 6, Category 4, Customer 4, Payment 1), mappers 9, ReportServiceTest 5
+* Unit — 97: domain 53 (ShopOrder 9, Product 9, Cart 8, Money 8, Email 6, NIF 6, Payment 3, CartItem 2, Customer 2), application services 30 (Order 9, Product 6, Cart 6, Category 4, Customer 4, Payment 1), mappers 9, ReportServiceTest 5
 * Application context load — 1
-* Persistence integration — 29
-* Controller integration — 56: Order 14, Product 12, Customer 7, Cart 7, Category 6, Report 5, Auth 5
+* Persistence integration — 30
+* Controller integration — 57: Order 14, Product 12, Customer 7, Cart 8, Category 6, Report 5, Auth 5
 * Messaging integration — 7
 
 ## 14. Decisions and Final-State Notes
@@ -524,7 +530,7 @@ The following implementation decisions are considered part of the current design
 * Port packages use `input` and `output`.
 * Category is under `domain/category/`.
 * Cart never expires.
-* No address snapshot is stored on orders. `CheckoutRequest` carries `addressId`, but the checkout flow does not read it and `ShopOrder` holds no address reference (see Known Issues).
+* Delivery address is snapshotted on the order at checkout (`delivery*` fields), validated against the authenticated customer's addresses.
 * No stock movement audit table is maintained.
 * No payment idempotency key is used because there is no real payment gateway integration.
 * `OrderItem` keeps historical records without orphan removal.
@@ -542,7 +548,6 @@ Frontend: Angular 22 project scaffolded with Tailwind CSS v4 and `@ngrx/signals`
 
 ## 16. Known Issues / Open Decisions
 
-No defects are open in the backend. Two design points remain undecided and affect the frontend checkout:
+No defects are open in the backend. One design point remains undecided and affects the frontend checkout:
 
-1. **`addressId` is required but unused.** `CheckoutRequest` validates `addressId` as `@NotNull`, but `CartController` and `OrderService.checkout()` never read it (`checkout(customerId, idempotencyKey, paymentMethod)`), and `ShopOrder` holds no address reference. An order does not record where it should be shipped. Options: remove `addressId` from the request, or store the address on the order (foreign key or snapshot).
-2. **No payments endpoint.** `ProcessPaymentUseCase`, `PaymentService`, `ProcessPaymentRequest` and `PaymentResponse` exist, but no controller exposes them, so an order only becomes `PAID` when an ADMIN updates its status. Options: expose a payments route, or record payment processing as out of scope (there is no real gateway).
+1. **No payments endpoint.** `ProcessPaymentUseCase`, `PaymentService`, `ProcessPaymentRequest` and `PaymentResponse` exist, but no controller exposes them, so an order only becomes `PAID` when an ADMIN updates its status. Options: expose a payments route, or record payment processing as out of scope (there is no real gateway).

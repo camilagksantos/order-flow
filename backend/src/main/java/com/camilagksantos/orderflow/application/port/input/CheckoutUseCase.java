@@ -5,5 +5,5 @@ import com.camilagksantos.orderflow.domain.order.ShopOrder;
 
 public interface CheckoutUseCase {
 
-    ShopOrder checkout(Long customerId, String idempotencyKey, PaymentMethod paymentMethod);
+    ShopOrder checkout(Long customerId, String idempotencyKey, Long addressId, PaymentMethod paymentMethod);
 }
