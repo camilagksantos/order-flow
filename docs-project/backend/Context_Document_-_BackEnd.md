@@ -71,6 +71,8 @@ Allowed transitions:
 
 Transitions are validated inside the `ShopOrder` aggregate. Invalid transitions throw `InvalidOrderStatusTransitionException`.
 
+Shipping requires a tracking code: `PATCH /api/v1/orders/{id}/status` with status `SHIPPED` must carry `trackingCode`, otherwise `OrderService` rejects it with a `BusinessRuleException` (422).
+
 ## 4. Package Structure
 
 ```text
@@ -250,11 +252,12 @@ The delivery address is snapshotted on the order at checkout (see 6.9), so later
 
 `availableQuantity = stockQuantity - reservedQuantity`.
 
-Stock changes are processed through the order event flow:
+Stock changes are processed through the order event flow. Each event is persisted to the outbox in the same transaction as the order change:
 
-- `ORDER_CREATED` → reserve stock
-- `ORDER_PAID` → confirm sale and decrement stock and reserved quantities
-- `ORDER_CANCELLED` → release reserved stock
+- `ORDER_CREATED` (checkout) → reserve stock
+- `ORDER_PAID` (payment route or ADMIN status update to PAID) → confirm sale and decrement stock and reserved quantities
+- `ORDER_CANCELLED` (order cancellation) → release reserved stock
+- `ORDER_SHIPPED` (ADMIN status update to SHIPPED) → no stock change; triggers the shipped email
 
 `InsufficientStockException` is raised when the available quantity is insufficient for a reservation.
 
@@ -297,6 +300,8 @@ The JWT contains the authenticated user's email, roles and, when a customer reco
 Customer-scoped routes verify that the path `customerId` matches the authenticated customer's claim. Order routes addressed by order ID or order number verify ownership against the loaded order; admins are allowed to access any order.
 
 Customer-scoped routes (the cart routes and `GET /orders/customer/{customerId}`) do not exempt admins: an admin gets 403 there because the admin token carries no `customerId`.
+
+`POST /api/v1/payments` loads the order named in the request body and verifies ownership with the same order check (ADMIN allowed).
 
 An order that does not exist returns 404, while an existing order owned by someone else returns 403, so a caller can tell whether an order id exists. Order IDs are UUIDs, which makes probing impractical; returning 404 in both cases would close that if it ever matters.
 
@@ -413,6 +418,26 @@ Cancelled orders are included in the date-range report.
 
 The end date is inclusive for the requested calendar day. Currency cells use EUR formatting.
 
+### 6.21 Payments
+
+`POST /api/v1/payments` processes a simulated payment (there is no real gateway). `PaymentService` loads the order and enforces these rules, each violation returning 422 (`BusinessRuleException`):
+
+- the order must be `PENDING`
+- the payment method must match the one chosen at checkout
+- an order accepts only one payment
+
+The amount comes from the order total, never from the client. The payment is approved immediately with a simulated transaction id, the order moves to `PAID` and an `ORDER_PAID` outbox event is saved, all in one transaction. An unknown order returns 404 and an order owned by someone else returns 403.
+
+### 6.22 Email Notifications
+
+The order event consumers call `EmailNotificationPort` (implemented by `MailEmailAdapter`):
+
+- `OrderCreatedConsumer` → `sendOrderConfirmation`
+- `OrderShippedConsumer` → `sendOrderShipped`
+- `OrderCancelledConsumer` → `sendOrderCancelled`
+
+The email is sent after the stock change and after the event id is saved in `processed_event`, inside its own `try/catch`. A failed send is only logged: the message does not fail, does not reach the dead-letter queue, and a retry cannot repeat the stock change. The trade-off is that a failed email is not retried.
+
 ## 7. RabbitMQ Configuration
 
 ### Exchanges
@@ -434,10 +459,10 @@ The scheduler publishes the full `OutboxEvent` object using the Jackson 3 compat
 
 ### Messaging Consumers
 
-- `OrderCreatedConsumer` — reserves stock
+- `OrderCreatedConsumer` — reserves stock and sends the confirmation email
 - `OrderPaidConsumer` — confirms sale
-- `OrderCancelledConsumer` — releases reserved stock
-- `OrderShippedConsumer` — records the processed event
+- `OrderCancelledConsumer` — releases reserved stock and sends the cancellation email
+- `OrderShippedConsumer` — sends the shipped email and records the processed event
 
 ## 8. Technology Stack
 
@@ -469,18 +494,19 @@ The scheduler publishes the full `OutboxEvent` object using the Jackson 3 compat
 | Layer                | Type        | Tool                       | Coverage                                                       |
 | -------------------- | ----------- | -------------------------- | -------------------------------------------------------------- |
 | Domain               | Unit        | JUnit 5                    | 53 tests (9 classes)                                           |
-| Application services | Unit        | JUnit 5 + Mockito          | 30 tests (6 classes)                                           |
+| Application services | Unit        | JUnit 5 + Mockito          | 36 tests (6 classes)                                           |
 | Mappers              | Unit        | JUnit 5                    | 9 tests (5 classes)                                            |
 | Reports              | Unit        | JUnit 5 + Mockito          | ReportServiceTest, 5 tests                                     |
-| Repositories         | Integration | Testcontainers             | 29 tests (5 flow suites)                                       |
-| Controllers          | Integration | Spring Boot Test + MockMvc | 57 tests (7 classes, real JWTs, includes ReportControllerTest) |
+| Messaging consumers  | Unit        | JUnit 5 + Mockito          | OrderEventConsumersEmailTest, 5 tests                          |
+| Repositories         | Integration | Testcontainers             | 30 tests (5 flow suites)                                       |
+| Controllers          | Integration | Spring Boot Test + MockMvc | 65 tests (8 classes, real JWTs, includes ReportControllerTest) |
 | Messaging            | Integration | Testcontainers + RabbitMQ  | MessagingFlowIntegrationTest, 7 tests                          |
 
 Integration tests use real MySQL and RabbitMQ containers. Messaging tests run without `@Transactional` because consumers use a separate database session.
 
 The test suite uses a singleton-container pattern so the same MySQL and RabbitMQ containers remain available across test classes.
 
-Full suite: 192 tests passing (97 unit, 1 application-context load, 30 persistence integration, 57 controller integration, 7 messaging integration).
+Full suite: 211 tests passing (108 unit, 1 application-context load, 30 persistence integration, 65 controller integration, 7 messaging integration).
 
 ## 10. Database Indexes
 

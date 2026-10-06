@@ -172,6 +172,9 @@ Key current behaviour:
 * `CustomerService.registerCustomer()` creates the User and assigns the CUSTOMER role before saving the Customer.
 * `ProductService.updateProduct()` loads the existing product and preserves SKU, status and reserved quantity.
 * `ReportService` generates the sales workbook using Apache POI.
+* `PaymentService.processPayment()` is transactional: it validates the order (PENDING, same payment method, no previous payment), takes the amount from the order, approves the payment with a simulated transaction id, calls `order.pay()` and saves an `ORDER_PAID` outbox event.
+* `OrderService.updateOrderStatus(orderId, status, trackingCode)` saves an `ORDER_PAID` event when the status changes to PAID and an `ORDER_SHIPPED` event when it changes to SHIPPED; shipping requires a non-blank tracking code (422 otherwise).
+* `OrderService.cancelOrder()` saves an `ORDER_CANCELLED` event, so reserved stock is released through the consumer.
 
 ## 6. Persistence
 
@@ -272,6 +275,7 @@ Important request details:
 * `AddToCartRequest` contains only `productId` and `quantity`; price/name/SKU are populated server-side.
 * `CheckoutRequest` contains `idempotencyKey`, `addressId` and `paymentMethod`. `addressId` must belong to the authenticated customer and is snapshotted onto the order.
 * `RegisterCustomerRequest` contains the password used to create the associated User.
+* `UpdateOrderStatusRequest` contains `status` and an optional `trackingCode`, which is required when the status is `SHIPPED`.
 
 ### Response DTOs
 
@@ -300,6 +304,7 @@ Located in `infrastructure/adapter/input/web/`.
 * `OrderController`
 * `ReportController`
 * `AuthController`
+* `PaymentController`
 
 Main routes:
 
@@ -311,8 +316,9 @@ Main routes:
 * `/api/v1/reports/sales`
 * `/api/v1/auth/login`
 * `/api/v1/auth/refresh`
+* `/api/v1/payments`
 
-No payments route is exposed (see Known Issues).
+POST /api/v1/payments processes a simulated payment; the order owner (or ADMIN) may call it.
 
 Public routes include registration, authentication, product reads, category reads and API documentation.
 
@@ -356,12 +362,14 @@ Successful publication changes the event to `SENT`; failures are recorded as `FA
 
 ### Consumers
 
-* `OrderCreatedConsumer` — reserves stock
+* `OrderCreatedConsumer` — reserves stock and sends the confirmation email
 * `OrderPaidConsumer` — confirms sale and updates stock
-* `OrderCancelledConsumer` — releases reserved stock
-* `OrderShippedConsumer` — registers the processed event
+* `OrderCancelledConsumer` — releases reserved stock and sends the cancellation email
+* `OrderShippedConsumer` — loads the order, records the processed event and sends the shipped email
 
 All consumers check `processed_event` before processing.
+
+The email consumers send the email after saving the processed event, inside their own `try/catch`: a failed send is logged and does not fail the message, so it never reaches the dead-letter queue or repeats the stock change.
 
 ### Publisher Status
 
@@ -378,6 +386,8 @@ Supported notifications:
 * Order confirmation
 * Order shipped
 * Order cancelled
+
+Each notification is called by the matching consumer (`OrderCreatedConsumer`, `OrderShippedConsumer`, `OrderCancelledConsumer`) through `EmailNotificationPort`.
 
 The sender address is externalised through `app.mail.from`.
 
@@ -486,6 +496,7 @@ Controller suites:
 * OrderControllerTest
 * ReportControllerTest
 * AuthControllerTest
+* PaymentControllerTest
 
 The tests also cover customer ownership (cart and per-customer order routes) and order ownership by ID and order number, including the admin exemption.
 
@@ -511,14 +522,22 @@ Messaging tests do not use `@Transactional` because the RabbitMQ consumer uses i
 
 `OrderServiceTest.shouldThrowWhenAddressDoesNotBelongToCustomer`, `CartControllerTest.shouldRejectCheckoutWithUnknownAddress` (422) and `OrderFlowIntegrationTest.shouldPersistDeliveryAddressSnapshot`. `CartControllerTest.shouldCheckoutCart` now checks the delivery fields in the response.
 
+### Payment Tests
+
+`PaymentServiceTest` (5 tests): success with order moved to PAID, order not found, order not PENDING, payment method differing from the order, payment already existing. `PaymentControllerTest` (6 tests): no token (401), payment approved and order PAID, another customer's order (403), second payment (422), different method (422), missing order (404).
+
+### Shipping and Notification Tests
+
+`OrderServiceTest` (2 tests): `ORDER_SHIPPED` event saved with the tracking code, and rejection of shipping without a tracking code. `OrderControllerTest` (2 tests): shipping with a tracking code (200) and without one (422). `OrderEventConsumersEmailTest` (5 tests, plain Mockito): each consumer calls its email method, a failed send still marks the event as processed, and a duplicate event sends nothing.
+
 ### Full Suite
 
-192 tests, all passing:
+211 tests, all passing:
 
-* Unit — 97: domain 53 (ShopOrder 9, Product 9, Cart 8, Money 8, Email 6, NIF 6, Payment 3, CartItem 2, Customer 2), application services 30 (Order 9, Product 6, Cart 6, Category 4, Customer 4, Payment 1), mappers 9, ReportServiceTest 5
+* Unit — 108: domain 53 (ShopOrder 9, Product 9, Cart 8, Money 8, Email 6, NIF 6, Payment 3, CartItem 2, Customer 2), application services 36 (Order 11, Product 6, Cart 6, Category 4, Customer 4, Payment 5), mappers 9, ReportServiceTest 5, OrderEventConsumersEmailTest 5
 * Application context load — 1
 * Persistence integration — 30
-* Controller integration — 57: Order 14, Product 12, Customer 7, Cart 8, Category 6, Report 5, Auth 5
+* Controller integration — 65: Order 16, Product 12, Customer 7, Cart 8, Category 6, Report 5, Auth 5, Payment 6
 * Messaging integration — 7
 
 ## 14. Decisions and Final-State Notes
@@ -539,6 +558,10 @@ The following implementation decisions are considered part of the current design
 * `customerEmail` is stored as an order snapshot for email delivery.
 * Jackson 3 / Spring AMQP 4 configuration is used.
 * `spring-boot-starter-flyway` is explicitly included for Spring Boot 4.x.
+* Payment is simulated: approved on request, with no gateway and no payment idempotency key (one payment per order is enforced instead).
+* Every order change with a side effect (created, paid, shipped, cancelled) writes an outbox event in the same transaction; the consumers apply the stock change and send the email.
+* Shipping requires a tracking code, sent in `UpdateOrderStatusRequest`.
+* Emails are sent after the processed event is saved and their failures are only logged; a failed email is not retried.
 
 ## 15. In Progress
 
@@ -548,6 +571,4 @@ Frontend: Angular 22 project scaffolded with Tailwind CSS v4 and `@ngrx/signals`
 
 ## 16. Known Issues / Open Decisions
 
-No defects are open in the backend. One design point remains undecided and affects the frontend checkout:
-
-1. **No payments endpoint.** `ProcessPaymentUseCase`, `PaymentService`, `ProcessPaymentRequest` and `PaymentResponse` exist, but no controller exposes them, so an order only becomes `PAID` when an ADMIN updates its status. Options: expose a payments route, or record payment processing as out of scope (there is no real gateway).
+No defects and no open decisions in the backend.
