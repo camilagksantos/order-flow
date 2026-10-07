@@ -8,6 +8,7 @@ import com.camilagksantos.orderflow.infrastructure.persistence.entity.RoleEntity
 import com.camilagksantos.orderflow.infrastructure.persistence.entity.UserEntity;
 import com.camilagksantos.orderflow.infrastructure.persistence.repository.RoleJpaRepository;
 import com.camilagksantos.orderflow.infrastructure.persistence.repository.UserJpaRepository;
+import jakarta.servlet.http.Cookie;
 import tools.jackson.databind.json.JsonMapper;
 import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.Test;
@@ -22,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -74,8 +76,11 @@ class AuthControllerTest extends BaseIntegrationTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").exists())
-                .andExpect(jsonPath("$.refreshToken").exists())
-                .andExpect(jsonPath("$.tokenType").value("Bearer"));
+                .andExpect(jsonPath("$.refreshToken").doesNotExist())
+                .andExpect(jsonPath("$.tokenType").value("Bearer"))
+                .andExpect(cookie().exists("refreshToken"))
+                .andExpect(cookie().httpOnly("refreshToken", true))
+                .andExpect(cookie().path("refreshToken", "/api/v1/auth"));
     }
 
     @Test
@@ -97,10 +102,12 @@ class AuthControllerTest extends BaseIntegrationTest {
         String refreshToken = jwtService.generateRefreshToken(userDetails);
 
         mockMvc.perform(post("/api/v1/auth/refresh")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("refreshToken", refreshToken))))
+                        .cookie(new Cookie("refreshToken", refreshToken)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.accessToken").exists());
+                .andExpect(jsonPath("$.accessToken").exists())
+                .andExpect(jsonPath("$.refreshToken").doesNotExist())
+                .andExpect(cookie().exists("refreshToken"))
+                .andExpect(cookie().httpOnly("refreshToken", true));
     }
 
     @Test
@@ -119,8 +126,47 @@ class AuthControllerTest extends BaseIntegrationTest {
     @Test
     void shouldRejectRefreshWithInvalidToken() throws Exception {
         mockMvc.perform(post("/api/v1/auth/refresh")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("refreshToken", "not-a-valid-jwt"))))
+                        .cookie(new Cookie("refreshToken", "not-a-valid-jwt")))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void shouldRejectRefreshWithoutCookie() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/refresh"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void shouldRejectAccessTokenOnRefresh() throws Exception {
+        String email = "access-" + UUID.randomUUID() + "@example.com";
+        persistTestUser(email, "Password123");
+
+        UserDetails userDetails = userDetailsService.loadUserByUsername(email);
+        String accessToken = jwtService.generateAccessToken(userDetails, Map.of());
+
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .cookie(new Cookie("refreshToken", accessToken)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void shouldRejectRefreshTokenAsBearer() throws Exception {
+        String email = "bearer-" + UUID.randomUUID() + "@example.com";
+        persistTestUser(email, "Password123");
+
+        UserDetails userDetails = userDetailsService.loadUserByUsername(email);
+        String refreshToken = jwtService.generateRefreshToken(userDetails);
+
+        mockMvc.perform(get("/api/v1/orders/customer/1")
+                        .header("Authorization", "Bearer " + refreshToken))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void shouldLogoutAndClearRefreshCookie() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/logout"))
+                .andExpect(status().isNoContent())
+                .andExpect(cookie().maxAge("refreshToken", 0))
+                .andExpect(cookie().value("refreshToken", ""));
     }
 }

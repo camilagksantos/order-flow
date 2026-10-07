@@ -136,6 +136,7 @@ The dev RabbitMQ keeps its state between restarts. Changing the type of an exist
 - RabbitMQ external
 - SMTP external
 - Configuration through environment variables
+- `APP_JWT_SECRET` and `APP_COOKIE_SECURE=true` must be set: the values in `application.yaml` are development values
 
 ## 6. Key Architectural Decisions
 
@@ -287,8 +288,16 @@ Spring Security uses stateless JWT authentication.
 
 - Access token expiration: 15 minutes
 - Refresh token expiration: 7 days
-- Refresh tokens are rotated on refresh
+- Refresh tokens are reissued on refresh; the previous one is not revoked and stays valid until it expires
 - Password hashing: BCrypt
+
+Access and refresh tokens carry a `type` claim (`access` or `refresh`). `JwtAuthenticationFilter` only authenticates `access` tokens and `POST /api/v1/auth/refresh` only accepts `refresh` tokens, so neither can be used in place of the other.
+
+The refresh token is never returned in the response body. `login` and `refresh` set it in a cookie named `refreshToken` with `HttpOnly`, `SameSite=Strict` and `Path=/api/v1/auth`, so scripts cannot read it and the browser sends it only to the auth routes. The `Secure` attribute comes from `app.cookie.secure` (`false` in the development `application.yaml`, `true` by default when the property is missing). `POST /api/v1/auth/logout` is public and clears the cookie.
+
+The access token is returned in the body as `accessToken` and is meant to be kept in memory by the client. After a page reload the client recovers the session by calling `POST /api/v1/auth/refresh`, which the browser answers with the cookie.
+
+`SameSite=Strict` assumes the frontend and the API are served from the same site (for example `app.example.com` and `api.example.com`; `localhost:4200` and `localhost:8080` count as the same site). CSRF protection is disabled because the API routes authenticate with the Bearer header; the only routes that use the cookie are `refresh` and `logout`, and `SameSite=Strict` protects them.
 
 Roles:
 
@@ -331,6 +340,8 @@ The authentication handler must import Spring Security's `AuthenticationExceptio
 Allowed origin for the current frontend integration:
 
 - `http://localhost:4200`
+
+Credentials are allowed (`allowCredentials(true)`), which the refresh cookie requires, so the allowed origin must stay explicit and never become a wildcard.
 
 Allowed methods:
 
@@ -499,14 +510,14 @@ The scheduler publishes the full `OutboxEvent` object using the Jackson 3 compat
 | Reports              | Unit        | JUnit 5 + Mockito          | ReportServiceTest, 5 tests                                     |
 | Messaging consumers  | Unit        | JUnit 5 + Mockito          | OrderEventConsumersEmailTest, 5 tests                          |
 | Repositories         | Integration | Testcontainers             | 30 tests (5 flow suites)                                       |
-| Controllers          | Integration | Spring Boot Test + MockMvc | 65 tests (8 classes, real JWTs, includes ReportControllerTest) |
+| Controllers          | Integration | Spring Boot Test + MockMvc | 69 tests (8 classes, real JWTs, includes ReportControllerTest) |
 | Messaging            | Integration | Testcontainers + RabbitMQ  | MessagingFlowIntegrationTest, 7 tests                          |
 
 Integration tests use real MySQL and RabbitMQ containers. Messaging tests run without `@Transactional` because consumers use a separate database session.
 
 The test suite uses a singleton-container pattern so the same MySQL and RabbitMQ containers remain available across test classes.
 
-Full suite: 211 tests passing (108 unit, 1 application-context load, 30 persistence integration, 65 controller integration, 7 messaging integration).
+Full suite: 215 tests passing (108 unit, 1 application-context load, 30 persistence integration, 69 controller integration, 7 messaging integration).
 
 ## 10. Database Indexes
 

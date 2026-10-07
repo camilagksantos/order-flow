@@ -19,6 +19,10 @@ import java.util.function.Function;
 @Service
 public class JwtService {
 
+    private static final String TYPE_CLAIM = "type";
+    private static final String ACCESS_TYPE = "access";
+    private static final String REFRESH_TYPE = "refresh";
+
     @Value("${app.jwt.secret}")
     private String secret;
 
@@ -29,11 +33,23 @@ public class JwtService {
     private long refreshExpiration;
 
     public String generateAccessToken(UserDetails userDetails, Map<String, Object> extraClaims) {
-        return buildToken(extraClaims, userDetails, expiration);
+        Map<String, Object> claims = new HashMap<>(extraClaims);
+        claims.put(TYPE_CLAIM, ACCESS_TYPE);
+        return buildToken(claims, userDetails, expiration);
     }
 
     public String generateRefreshToken(UserDetails userDetails) {
-        return buildToken(new HashMap<>(), userDetails, refreshExpiration);
+        Map<String, Object> claims = new HashMap<>();
+        claims.put(TYPE_CLAIM, REFRESH_TYPE);
+        return buildToken(claims, userDetails, refreshExpiration);
+    }
+
+    public boolean isAccessToken(String token) {
+        return ACCESS_TYPE.equals(extractClaim(token, claims -> claims.get(TYPE_CLAIM, String.class)));
+    }
+
+    public boolean isRefreshToken(String token) {
+        return REFRESH_TYPE.equals(extractClaim(token, claims -> claims.get(TYPE_CLAIM, String.class)));
     }
 
     public String extractEmail(String token) {

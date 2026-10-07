@@ -61,6 +61,8 @@ Key settings:
 * `app.mail.from` is externalised
 * JWT access token expiration: 15 minutes
 * JWT refresh token expiration: 7 days
+* `app.cookie.secure: false` for development; the code defaults to `true` when the property is missing, and production sets `APP_COOKIE_SECURE=true`
+* `app.jwt.secret` holds a development value; production sets `APP_JWT_SECRET`
 
 Flyway is configured explicitly for Spring Boot 4.x. Test configuration also uses baseline settings for fresh Testcontainers databases.
 
@@ -293,6 +295,8 @@ Important request details:
 
 `OrderResponse` includes `cancelReason` and the `delivery*` address fields together with status, items, amounts, payment method, tracking code and timestamps.
 
+`TokenResponse` contains `accessToken`, `tokenType` and `expiresIn`. The refresh token is not part of the body: it is sent only in the `HttpOnly` cookie.
+
 ### REST Controllers
 
 Located in `infrastructure/adapter/input/web/`.
@@ -316,6 +320,7 @@ Main routes:
 * `/api/v1/reports/sales`
 * `/api/v1/auth/login`
 * `/api/v1/auth/refresh`
+* `/api/v1/auth/logout`
 * `/api/v1/payments`
 
 POST /api/v1/payments processes a simulated payment; the order owner (or ADMIN) may call it.
@@ -428,6 +433,7 @@ JWT claims:
 * `sub` — user email
 * `roles` — granted authorities
 * `customerId` — present for users with a Customer record
+* `type` — `access` or `refresh`
 * `iat`
 * `exp`
 
@@ -435,7 +441,10 @@ Security behaviour:
 
 * Stateless authentication
 * BCrypt password hashing
-* Refresh token rotation
+* Refresh token reissued on every refresh; the previous token is not revoked
+* Refresh token delivered only in a cookie named `refreshToken` with `HttpOnly`, `SameSite=Strict` and `Path=/api/v1/auth`; the `Secure` attribute comes from `app.cookie.secure`
+* Only `access` tokens authenticate API requests (`JwtAuthenticationFilter`); only `refresh` tokens are accepted by `/api/v1/auth/refresh`
+* `POST /api/v1/auth/logout` is public and clears the cookie
 * `customerId` ownership checks for customer-scoped routes
 * Order ownership checks for ID/order-number routes
 * ADMIN bypass for order ownership checks
@@ -530,14 +539,18 @@ Messaging tests do not use `@Transactional` because the RabbitMQ consumer uses i
 
 `OrderServiceTest` (2 tests): `ORDER_SHIPPED` event saved with the tracking code, and rejection of shipping without a tracking code. `OrderControllerTest` (2 tests): shipping with a tracking code (200) and without one (422). `OrderEventConsumersEmailTest` (5 tests, plain Mockito): each consumer calls its email method, a failed send still marks the event as processed, and a duplicate event sends nothing.
 
+### Authentication Cookie Tests
+
+`AuthControllerTest` (9 tests, 4 of them new): login sets the `HttpOnly` cookie scoped to `/api/v1/auth` and does not return the refresh token in the body, refresh through the cookie, refresh with an invalid token (401), refresh without the cookie (401), an access token sent to `/refresh` (401), a refresh token sent as `Bearer` (401), logout clearing the cookie (204), plus the existing blank-password (400) and wrong-password (401) cases.
+
 ### Full Suite
 
-211 tests, all passing:
+215 tests, all passing:
 
 * Unit — 108: domain 53 (ShopOrder 9, Product 9, Cart 8, Money 8, Email 6, NIF 6, Payment 3, CartItem 2, Customer 2), application services 36 (Order 11, Product 6, Cart 6, Category 4, Customer 4, Payment 5), mappers 9, ReportServiceTest 5, OrderEventConsumersEmailTest 5
 * Application context load — 1
 * Persistence integration — 30
-* Controller integration — 65: Order 16, Product 12, Customer 7, Cart 8, Category 6, Report 5, Auth 5, Payment 6
+* Controller integration — 69: Order 16, Product 12, Customer 7, Cart 8, Category 6, Report 5, Auth 9, Payment 6
 * Messaging integration — 7
 
 ## 14. Decisions and Final-State Notes
@@ -562,6 +575,11 @@ The following implementation decisions are considered part of the current design
 * Every order change with a side effect (created, paid, shipped, cancelled) writes an outbox event in the same transaction; the consumers apply the stock change and send the email.
 * Shipping requires a tracking code, sent in `UpdateOrderStatusRequest`.
 * Emails are sent after the processed event is saved and their failures are only logged; a failed email is not retried.
+* The refresh token is delivered only in an `HttpOnly`, `SameSite=Strict` cookie scoped to `/api/v1/auth`; the access token stays in the response body and the client keeps it in memory, recovering the session after a reload through `/refresh`.
+* Access and refresh tokens carry a `type` claim and cannot be used in place of each other. Before this change a refresh token worked as a `Bearer` access token.
+* Refresh tokens are reissued on every refresh but are not revoked on the server: a stolen refresh token stays valid until it expires or the secret changes. Revocation would need a refresh-token table.
+* `SameSite=Strict` requires the frontend and the API to be served from the same site.
+* `app.jwt.secret` and `app.cookie.secure` in `application.yaml` are development values; production sets `APP_JWT_SECRET` and `APP_COOKIE_SECURE=true`.
 
 ## 15. In Progress
 

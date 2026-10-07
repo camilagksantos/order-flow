@@ -44,3 +44,5 @@ app:
     secret: your-256-bit-secret-key-here-must-be-long-enough
     expiration: 900000
     refresh-expiration: 604800000
+  cookie:
+    secure: false
