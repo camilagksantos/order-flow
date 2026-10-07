@@ -295,7 +295,7 @@ Access and refresh tokens carry a `type` claim (`access` or `refresh`). `JwtAuth
 
 The refresh token is never returned in the response body. `login` and `refresh` set it in a cookie named `refreshToken` with `HttpOnly`, `SameSite=Strict` and `Path=/api/v1/auth`, so scripts cannot read it and the browser sends it only to the auth routes. The `Secure` attribute comes from `app.cookie.secure` (`false` in the development `application.yaml`, `true` by default when the property is missing). `POST /api/v1/auth/logout` is public and clears the cookie.
 
-The access token is returned in the body as `accessToken` and is meant to be kept in memory by the client. After a page reload the client recovers the session by calling `POST /api/v1/auth/refresh`, which the browser answers with the cookie.
+The access token is returned in the body as `accessToken`. A client that has lost its access token, for example after a page reload, gets a new one by calling `POST /api/v1/auth/refresh`; the browser sends the cookie automatically.
 
 `SameSite=Strict` assumes the frontend and the API are served from the same site (for example `app.example.com` and `api.example.com`; `localhost:4200` and `localhost:8080` count as the same site). CSRF protection is disabled because the API routes authenticate with the Bearer header; the only routes that use the cookie are `refresh` and `logout`, and `SameSite=Strict` protects them.
 

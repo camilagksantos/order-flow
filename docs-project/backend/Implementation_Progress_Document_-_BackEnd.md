@@ -25,8 +25,6 @@ Implemented areas:
 * Sales report generation
 * Unit and backend integration tests
 
-The frontend is scaffolded (Angular 22, Tailwind CSS v4, `@ngrx/signals`); the application itself and its tests are still to be implemented.
-
 ## 2. Database Migrations
 
 Implemented migrations:
@@ -575,7 +573,7 @@ The following implementation decisions are considered part of the current design
 * Every order change with a side effect (created, paid, shipped, cancelled) writes an outbox event in the same transaction; the consumers apply the stock change and send the email.
 * Shipping requires a tracking code, sent in `UpdateOrderStatusRequest`.
 * Emails are sent after the processed event is saved and their failures are only logged; a failed email is not retried.
-* The refresh token is delivered only in an `HttpOnly`, `SameSite=Strict` cookie scoped to `/api/v1/auth`; the access token stays in the response body and the client keeps it in memory, recovering the session after a reload through `/refresh`.
+* The refresh token is delivered only in an `HttpOnly`, `SameSite=Strict` cookie scoped to `/api/v1/auth`; the access token is returned in the response body, and `/refresh` issues a new one from the cookie.
 * Access and refresh tokens carry a `type` claim and cannot be used in place of each other. Before this change a refresh token worked as a `Bearer` access token.
 * Refresh tokens are reissued on every refresh but are not revoked on the server: a stolen refresh token stays valid until it expires or the secret changes. Revocation would need a refresh-token table.
 * `SameSite=Strict` requires the frontend and the API to be served from the same site.
@@ -584,8 +582,6 @@ The following implementation decisions are considered part of the current design
 ## 15. In Progress
 
 Backend: nothing pending.
-
-Frontend: Angular 22 project scaffolded with Tailwind CSS v4 and `@ngrx/signals`; screens, state stores, unit tests and Cypress integration tests are still to be implemented.
 
 ## 16. Known Issues / Open Decisions
 
