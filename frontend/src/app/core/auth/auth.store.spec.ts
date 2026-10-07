@@ -11,12 +11,13 @@ function buildToken(payload: object): string {
 }
 
 describe('AuthStore', () => {
-    const authApi = { login: vi.fn(), refresh: vi.fn() };
+    const authApi = { login: vi.fn(), refresh: vi.fn(), logout: vi.fn() };
     let store: InstanceType<typeof AuthStore>;
 
     beforeEach(() => {
         authApi.login.mockReset();
         authApi.refresh.mockReset();
+        authApi.logout.mockReset();
         TestBed.configureTestingModule({
             providers: [{ provide: AuthApi, useValue: authApi }],
         });
@@ -121,5 +122,48 @@ describe('AuthStore', () => {
         expect(store.isAuthenticated()).toBe(false);
         expect(store.user()).toBeNull();
         expect(store.accessToken()).toBeNull();
+    });
+
+    it('should call the API and clear the session on logout', async () => {
+        const accessToken = buildToken({ sub: 'ana@exemplo.pt', roles: ['ROLE_CUSTOMER'], customerId: 7, type: 'access' });
+        authApi.login.mockReturnValue(of({ accessToken, tokenType: 'Bearer', expiresIn: 900 }));
+        authApi.logout.mockReturnValue(of(undefined));
+        await store.login({ email: 'ana@exemplo.pt', password: 'Password123' });
+
+        await store.logout();
+
+        expect(authApi.logout).toHaveBeenCalledTimes(1);
+        expect(store.isAuthenticated()).toBe(false);
+        expect(store.user()).toBeNull();
+    });
+
+    it('should clear the session on logout even when the API fails', async () => {
+        const accessToken = buildToken({ sub: 'ana@exemplo.pt', roles: ['ROLE_CUSTOMER'], customerId: 7, type: 'access' });
+        authApi.login.mockReturnValue(of({ accessToken, tokenType: 'Bearer', expiresIn: 900 }));
+        authApi.logout.mockReturnValue(throwError(() => new Error('network')));
+        await store.login({ email: 'ana@exemplo.pt', password: 'Password123' });
+
+        await expect(store.logout()).resolves.toBeUndefined();
+
+        expect(store.isAuthenticated()).toBe(false);
+        expect(store.user()).toBeNull();
+    });
+
+    it('should restore the session from the refresh cookie', async () => {
+        const accessToken = buildToken({ sub: 'ana@exemplo.pt', roles: ['ROLE_CUSTOMER'], customerId: 7, type: 'access' });
+        authApi.refresh.mockReturnValue(of({ accessToken, tokenType: 'Bearer', expiresIn: 900 }));
+
+        await store.restoreSession();
+
+        expect(store.isAuthenticated()).toBe(true);
+        expect(store.customerId()).toBe(7);
+    });
+
+    it('should leave the session empty without failing when there is no session to restore', async () => {
+        authApi.refresh.mockReturnValue(throwError(() => new Error('401')));
+
+        await expect(store.restoreSession()).resolves.toBeUndefined();
+
+        expect(store.isAuthenticated()).toBe(false);
     });
 });

@@ -47,4 +47,18 @@ describe('AuthApi', () => {
         req.flush(response);
         expect(received).toEqual(response);
     });
+
+    it('should post to the logout route without a body and with credentials enabled', () => {
+        let completed = false;
+
+        api.logout().subscribe({ complete: () => (completed = true) });
+
+        const req = http.expectOne(`${environment.apiUrl}/api/v1/auth/logout`);
+        expect(req.request.method).toBe('POST');
+        expect(req.request.body).toBeNull();
+        expect(req.request.withCredentials).toBe(true);
+
+        req.flush(null);
+        expect(completed).toBe(true);
+    });
 });

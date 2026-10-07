@@ -60,19 +60,28 @@ export const AuthStore = signalStore(
       }
     };
 
+    const refresh = (): Promise<void> => {
+      if (!refreshInFlight) {
+        refreshInFlight = runRefresh().finally(() => {
+          refreshInFlight = null;
+        });
+      }
+      return refreshInFlight;
+    };
+
     return {
       async login(request: LoginRequest): Promise<void> {
         const response = await firstValueFrom(authApi.login(request));
         startSession(response.accessToken);
       },
-      refresh(): Promise<void> {
-        if (!refreshInFlight) {
-          refreshInFlight = runRefresh().finally(() => {
-            refreshInFlight = null;
-          });
-        }
-        return refreshInFlight;
+      async logout(): Promise<void> {
+        await firstValueFrom(authApi.logout()).catch(() => undefined);
+        clearSession();
       },
+      async restoreSession(): Promise<void> {
+        await refresh().catch(() => undefined);
+      },
+      refresh,
       clearSession
     };
   })
