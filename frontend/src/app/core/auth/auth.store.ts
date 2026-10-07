@@ -8,11 +8,10 @@ import {
 } from '@ngrx/signals';
 import { jwtDecode } from 'jwt-decode';
 import { firstValueFrom } from 'rxjs';
-
-import { AuthApi } from './auth-api';
 import { AccessTokenPayload } from '../../models/auth/access-token-payload';
 import { AuthUser } from '../../models/auth/auth-user';
 import { LoginRequest } from '../../models/auth/login-request';
+import { AuthApi } from './auth-api';
 
 type AuthState = {
   accessToken: string | null;
