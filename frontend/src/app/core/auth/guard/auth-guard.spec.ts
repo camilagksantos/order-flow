@@ -2,7 +2,7 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, Router, RouterStateSnapshot, UrlTree, provideRouter } from '@angular/router';
 import { authGuard } from './auth-guard';
-import { AuthStore } from './auth.store';
+import { AuthStore } from '../auth.store';
 
 describe('authGuard', () => {
   const isAuthenticated = signal(false);

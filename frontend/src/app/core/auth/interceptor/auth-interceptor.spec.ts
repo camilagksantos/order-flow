@@ -3,9 +3,9 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
-import { environment } from '../../../environments/environment';
+import { environment } from '../../../../environments/environment';
 import { authInterceptor } from './auth-interceptor';
-import { AuthStore } from './auth.store';
+import { AuthStore } from '../auth.store';
 
 const unauthorized = { status: 401, statusText: 'Unauthorized' };
 const flushPromises = () => new Promise<void>((resolve) => setTimeout(resolve));

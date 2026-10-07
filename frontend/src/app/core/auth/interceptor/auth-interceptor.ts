@@ -1,8 +1,8 @@
 import { HttpErrorResponse, HttpInterceptorFn, HttpRequest } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { catchError, from, switchMap, throwError } from 'rxjs';
-import { environment } from '../../../environments/environment';
-import { AuthStore } from './auth.store';
+import { environment } from '../../../../environments/environment';
+import { AuthStore } from '../auth.store';
 
 const apiPrefix = `${environment.apiUrl}/api/`;
 const authPrefix = `${apiPrefix}v1/auth/`;
