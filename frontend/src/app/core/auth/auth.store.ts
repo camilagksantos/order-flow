@@ -31,18 +31,49 @@ export const AuthStore = signalStore(
     isAdmin: computed(() => store.user()?.roles.includes('ROLE_ADMIN') ?? false),
     customerId: computed(() => store.user()?.customerId ?? null)
   })),
-  withMethods((store, authApi = inject(AuthApi)) => ({
-    async login(request: LoginRequest): Promise<void> {
-      const response = await firstValueFrom(authApi.login(request));
-      const payload = jwtDecode<AccessTokenPayload>(response.accessToken);
+  withMethods((store, authApi = inject(AuthApi)) => {
+    let refreshInFlight: Promise<void> | null = null;
+
+    const startSession = (accessToken: string): void => {
+      const payload = jwtDecode<AccessTokenPayload>(accessToken);
       patchState(store, {
-        accessToken: response.accessToken,
+        accessToken,
         user: {
           email: payload.sub,
           roles: payload.roles,
           customerId: payload.customerId ?? null
         }
       });
-    }
-  }))
+    };
+
+    const clearSession = (): void => {
+      patchState(store, initialAuthState);
+    };
+
+    const runRefresh = async (): Promise<void> => {
+      try {
+        const response = await firstValueFrom(authApi.refresh());
+        startSession(response.accessToken);
+      } catch (error) {
+        clearSession();
+        throw error;
+      }
+    };
+
+    return {
+      async login(request: LoginRequest): Promise<void> {
+        const response = await firstValueFrom(authApi.login(request));
+        startSession(response.accessToken);
+      },
+      refresh(): Promise<void> {
+        if (!refreshInFlight) {
+          refreshInFlight = runRefresh().finally(() => {
+            refreshInFlight = null;
+          });
+        }
+        return refreshInFlight;
+      },
+      clearSession
+    };
+  })
 );

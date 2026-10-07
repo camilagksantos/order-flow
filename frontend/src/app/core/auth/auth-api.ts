@@ -13,4 +13,8 @@ export class AuthApi {
     login(request: LoginRequest): Observable<TokenResponse> {
         return this.http.post<TokenResponse>(`${this.baseUrl}/login`, request, { withCredentials: true });
     }
+
+    refresh(): Observable<TokenResponse> {
+        return this.http.post<TokenResponse>(`${this.baseUrl}/refresh`, null, { withCredentials: true });
+    }
 }

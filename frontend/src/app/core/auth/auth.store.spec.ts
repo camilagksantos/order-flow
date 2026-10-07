@@ -11,11 +11,12 @@ function buildToken(payload: object): string {
 }
 
 describe('AuthStore', () => {
-    const authApi = { login: vi.fn() };
+    const authApi = { login: vi.fn(), refresh: vi.fn() };
     let store: InstanceType<typeof AuthStore>;
 
     beforeEach(() => {
         authApi.login.mockReset();
+        authApi.refresh.mockReset();
         TestBed.configureTestingModule({
             providers: [{ provide: AuthApi, useValue: authApi }],
         });
@@ -63,5 +64,62 @@ describe('AuthStore', () => {
 
         expect(store.isAuthenticated()).toBe(false);
         expect(store.user()).toBeNull();
+    });
+
+    it('should replace the session with the new token on refresh', async () => {
+        const oldToken = buildToken({ sub: 'ana@exemplo.pt', roles: ['ROLE_CUSTOMER'], customerId: 7, type: 'access', iat: 1 });
+        const newToken = buildToken({ sub: 'ana@exemplo.pt', roles: ['ROLE_CUSTOMER'], customerId: 7, type: 'access', iat: 2 });
+        authApi.login.mockReturnValue(of({ accessToken: oldToken, tokenType: 'Bearer', expiresIn: 900 }));
+        authApi.refresh.mockReturnValue(of({ accessToken: newToken, tokenType: 'Bearer', expiresIn: 900 }));
+        await store.login({ email: 'ana@exemplo.pt', password: 'Password123' });
+
+        await store.refresh();
+
+        expect(store.accessToken()).toBe(newToken);
+        expect(store.customerId()).toBe(7);
+    });
+
+    it('should clear the session and rethrow when the refresh fails', async () => {
+        const accessToken = buildToken({ sub: 'ana@exemplo.pt', roles: ['ROLE_CUSTOMER'], customerId: 7, type: 'access' });
+        authApi.login.mockReturnValue(of({ accessToken, tokenType: 'Bearer', expiresIn: 900 }));
+        authApi.refresh.mockReturnValue(throwError(() => new Error('401')));
+        await store.login({ email: 'ana@exemplo.pt', password: 'Password123' });
+
+        await expect(store.refresh()).rejects.toThrow('401');
+
+        expect(store.isAuthenticated()).toBe(false);
+        expect(store.user()).toBeNull();
+    });
+
+    it('should share one request between simultaneous refreshes', async () => {
+        const newToken = buildToken({ sub: 'ana@exemplo.pt', roles: ['ROLE_CUSTOMER'], customerId: 7, type: 'access' });
+        authApi.refresh.mockReturnValue(of({ accessToken: newToken, tokenType: 'Bearer', expiresIn: 900 }));
+
+        await Promise.all([store.refresh(), store.refresh()]);
+
+        expect(authApi.refresh).toHaveBeenCalledTimes(1);
+        expect(store.accessToken()).toBe(newToken);
+    });
+
+    it('should make a new request when a refresh is asked after the previous one finished', async () => {
+        const newToken = buildToken({ sub: 'ana@exemplo.pt', roles: ['ROLE_CUSTOMER'], customerId: 7, type: 'access' });
+        authApi.refresh.mockReturnValue(of({ accessToken: newToken, tokenType: 'Bearer', expiresIn: 900 }));
+
+        await store.refresh();
+        await store.refresh();
+
+        expect(authApi.refresh).toHaveBeenCalledTimes(2);
+    });
+
+    it('should empty the session on clearSession', async () => {
+        const accessToken = buildToken({ sub: 'ana@exemplo.pt', roles: ['ROLE_CUSTOMER'], customerId: 7, type: 'access' });
+        authApi.login.mockReturnValue(of({ accessToken, tokenType: 'Bearer', expiresIn: 900 }));
+        await store.login({ email: 'ana@exemplo.pt', password: 'Password123' });
+
+        store.clearSession();
+
+        expect(store.isAuthenticated()).toBe(false);
+        expect(store.user()).toBeNull();
+        expect(store.accessToken()).toBeNull();
     });
 });

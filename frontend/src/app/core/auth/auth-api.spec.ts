@@ -32,4 +32,19 @@ describe('AuthApi', () => {
         req.flush(response);
         expect(received).toEqual(response);
     });
+
+    it('should post to the refresh route without a body and with credentials enabled', () => {
+        const response = { accessToken: 'new-token', tokenType: 'Bearer', expiresIn: 900 };
+        let received: unknown;
+
+        api.refresh().subscribe((value) => (received = value));
+
+        const req = http.expectOne(`${environment.apiUrl}/api/v1/auth/refresh`);
+        expect(req.request.method).toBe('POST');
+        expect(req.request.body).toBeNull();
+        expect(req.request.withCredentials).toBe(true);
+
+        req.flush(response);
+        expect(received).toEqual(response);
+    });
 });
