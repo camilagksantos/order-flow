@@ -2,59 +2,83 @@
 
 ## 1. Current Status
 
-The Angular project is scaffolded and configured. No screen, store or service has been implemented yet. The architecture is described in `Context_Document_-_FrontEnd.md`.
+The Angular project is configured and the authentication core (step 1) is implemented. No screen has been built yet. The architecture is described in `Context_Document_-_FrontEnd.md`.
 
 ## 2. Configuration Done
 
-- Angular 22.2 project in `frontend/` with standalone components, routing and CSS, without SSR
-- Tailwind CSS v4 configured: `.postcssrc.json` with `@tailwindcss/postcss` and `@import "tailwindcss";` in `src/styles.css`
-- `@ngrx/signals` installed
-- Environments generated with `ng generate environments`; `environment.ts` and `environment.development.ts` both define `apiUrl: 'http://localhost:8080'`, and the `development` build replaces the base file through `fileReplacements`
-- Test runner: Vitest 5 with jsdom through `@angular/build:unit-test`
-- The generated title test in `app.spec.ts` was removed because the template only contains the router outlet
-
-Verification: `ng test --no-watch` runs 1 test, passing. `ng build` succeeds with an initial bundle of 194.43 kB raw (53.18 kB estimated transfer).
+* Angular 22.2 project in `frontend/` with standalone components, routing and CSS, without SSR
+* Tailwind CSS v4 configured: `.postcssrc.json` with `@tailwindcss/postcss` and `@import "tailwindcss";` in `src/styles.css`
+* `@ngrx/signals` installed
+* `jwt-decode` installed
+* Environments generated with `ng generate environments`; `environment.ts` and `environment.development.ts` both define `apiUrl: 'http://localhost:8080'`, and the `development` build replaces the base file through `fileReplacements`
+* `app.config.ts` registers the router, `HttpClient` with the auth interceptor, and an app initializer that restores the session
+* Test runner: Vitest 5 with jsdom through `@angular/build:unit-test`
+* The generated title test in `app.spec.ts` was removed because the template only contains the router outlet
 
 ## 3. Build Order
 
-| Step    | Content                                                                               | Status      |
-| ------- | ------------------------------------------------------------------------------------- | ----------- |
-| 0       | Environments and scaffold cleanup                                                     | Done        |
-| 1       | Authentication core: `jwt-decode`, `AuthStore`, interceptor, refresh at start, guards | Not started |
-| 2       | Shell and header, login and register screens                                          | Not started |
-| 3       | Catalog                                                                               | Not started |
-| 4       | Cart                                                                                  | Not started |
-| 5       | Checkout and payment                                                                  | Not started |
-| 6       | Orders                                                                                | Not started |
-| 7       | Cypress end-to-end tests                                                              | Not started |
-| Phase 2 | Admin area: products, order status with tracking code, sales report                   | Not started |
+| Step | Content | Status |
+| --- | --- | --- |
+| 0 | Environments and scaffold cleanup | Done |
+| 1 | Authentication core: `AuthApi`, `AuthStore`, interceptor with token renewal, session restore and logout, guards | Done |
+| 2 | Shell and header, theme and startup spinner, login and register screens | Not started |
+| 3 | Catalog | Not started |
+| 4 | Cart | Not started |
+| 5 | Checkout and payment | Not started |
+| 6 | Orders | Not started |
+| 7 | Cypress end-to-end tests | Not started |
+| Phase 2 | Admin area: products, order status with tracking code, sales report | Not started |
 
-Each step delivers explanation of the new concepts, code and tests.
+Each step delivers a short description of each file, the code and the tests.
+
+### Step 1 contents
+
+* `models/auth/`: `LoginRequest`, `TokenResponse`, `AuthUser`, `AccessTokenPayload`, one file each
+* `core/auth/auth-api.ts`: `login`, `refresh` and `logout`, all with credentials enabled
+* `core/auth/auth.store.ts`: session state, `login`, `logout`, `restoreSession`, `refresh` (one shared request for simultaneous calls) and `clearSession`
+* `core/auth/interceptor/auth-interceptor.ts`: adds the bearer token and renews it on a 401
+* `core/auth/guard/auth-guard.ts` and `guest-guard.ts`
+* `app.config.ts`: interceptor and `provideAppInitializer` calling `restoreSession`
 
 ## 4. Test Coverage
 
-- Unit tests: 1 (`App` creation)
-- Coverage tooling (`@vitest/coverage-v8`) and the 70% threshold are not configured yet
-- Cypress is not installed yet
+31 unit tests, all passing:
+
+* `App` — 1
+* `AuthApi` — 3 (login, refresh, logout)
+* `AuthStore` — 13 (initial state, customer login, admin login, failed login, refresh, failed refresh, shared refresh, new refresh after the previous one finished, clear session, logout, logout with a failing API, restore session, restore without a session)
+* `authInterceptor` — 10 (header added, no token, auth routes, other domains, renewal and repeat, failed renewal, repeated 401, non-401 errors, 401 from an auth route, 401 without a logged-in user)
+* Guards — 4 (`authGuard` for a logged-in user and for a guest with the return url, `guestGuard` for a guest and for a logged-in user)
+
+Coverage tooling (`@vitest/coverage-v8`) and the 70% threshold are not configured yet. Cypress is not installed yet.
 
 ## 5. Decisions and Final-State Notes
 
-- Test runner is Vitest, the default generated by Angular 22, instead of Jest
-- Styling uses only Tailwind CSS, with no component library
-- Phase 1 covers the customer storefront; the admin area is phase 2
-- The refresh token stays in an `HttpOnly` cookie managed by the browser; the access token lives only in memory; the session is restored after a reload by calling `/api/v1/auth/refresh` (see `Context_Document_-_FrontEnd.md`, section 7)
-- `roles` and `customerId` are read from the access token payload with the `jwt-decode` library
-- Folder structure is grouped by subject: a file used by one area stays in that area, a file used by two or more areas or by the header goes to `core/`, and reusable components without business rules go to `shared/components/`
-- Component `.css` files are created only when a style cannot be expressed with Tailwind classes
-- File naming follows Angular 20+ (no `.component` or `.service` suffixes)
-- The work goes one part at a time: decisions are settled before code, and each new concept is explained
-- Commit messages are written in English
+* Test runner is Vitest, the default generated by Angular 22, instead of Jest
+* Styling uses only Tailwind CSS, with no component library
+* Phase 1 covers the customer storefront; the admin area is phase 2
+* Everything is built on the signal-based APIs of Angular 22: signals, signal inputs, Signal Forms, `httpResource` for reads and the new control flow
+* Services use `@Service()`; actions go through `HttpClient` in the stores, reads through `httpResource`
+* The refresh token stays in an `HttpOnly` cookie managed by the browser; the access token lives only in memory (see `Context_Document_-_FrontEnd.md`, section 7)
+* `roles` and `customerId` are read from the access token payload with the `jwt-decode` library
+* Token renewal: only when a call made while logged in returns 401 and is not an auth route; one retry per call; simultaneous 401s share one refresh; a failed refresh clears the session and the interceptor does not navigate
+* The app waits for the session restore before appearing; a guest opening the app causes an expected 401 in the console
+* Logout clears the local session even if the backend call fails
+* Guards: a guest is sent to `/login` with `returnUrl`, and a logged-in user opening the login or register is sent to `/products`
+* Folder structure is grouped by subject; all data types live in `app/models/<subject>/`, one `type` per file and without a suffix; classes used by one area stay in that area, and those used by two or more areas or by the header go to `core/`
+* File names follow the IDE generators: no suffix for services and components, `.store` for stores; the interceptor and the guards have their own subfolders under `core/auth/`, while the API and the store stay at the top level
+* Component `.css` files are created only when a style cannot be expressed with Tailwind classes
+* The work goes one part at a time: decisions are settled before code, descriptions are short, and each file is created with the IDE generator and then adjusted
+* Commit messages are written in English
+* The editor may show errors such as `Cannot find name 'describe'` in new spec files until the TypeScript server is restarted; `ng test` is the reference
 
 ## 6. In Progress
 
-Nothing in progress. Next: step 1, authentication core.
+Nothing in progress. Next: step 2, shell and header, theme and startup spinner, login and register screens.
 
 ## 7. Pending Decisions
 
-1. Color palette and font for the global theme, to be chosen at step 2 (shell and header).
-2. Backend controllers still to be reviewed before the catalog and checkout steps: `ProductController`, `CategoryController` and `CustomerController`, to confirm product filters and the address routes.
+1. Color palette and font for the global theme, to be chosen at step 2.
+2. Startup spinner in `index.html`, planned for step 2 with the theme.
+3. The login screen must read the `returnUrl` parameter and send the user back after the login (step 2).
+4. Backend controllers still to be reviewed before the catalog and checkout steps: `ProductController`, `CategoryController` and `CustomerController`, to confirm product filters and the address routes.

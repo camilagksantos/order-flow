@@ -2,7 +2,8 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, Router, RouterStateSnapshot, UrlTree, provideRouter } from '@angular/router';
 import { guestGuard } from './guest-guard';
-import { AuthStore } from './auth.store';
+import { AuthStore } from '../auth.store';
+
 
 describe('guestGuard', () => {
   const isAuthenticated = signal(false);
