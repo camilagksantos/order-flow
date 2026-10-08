@@ -61,6 +61,7 @@ Key settings:
 * JWT refresh token expiration: 7 days
 * `app.cookie.secure: false` for development; the code defaults to `true` when the property is missing, and production sets `APP_COOKIE_SECURE=true`
 * `app.jwt.secret` holds a development value; production sets `APP_JWT_SECRET`
+* `app.cors.allowed-origin: http://localhost:4200` for development; the code defaults to the same value when the property is missing, and production sets `APP_CORS_ALLOWED_ORIGIN`
 
 Flyway is configured explicitly for Spring Boot 4.x. Test configuration also uses baseline settings for fresh Testcontainers databases.
 
@@ -77,7 +78,7 @@ Value objects:
 Aggregates:
 
 * `Product` — reserve, release, activate, deactivate, confirmSale
-* `Customer` — block, activate
+* `Customer` — block, activate, addAddress, findAddress, updateAddress, makeAddressDefault, removeAddress
 * `Cart` — addItem, removeItem, convert, newCart
 * `ShopOrder` — pay, startPreparing, ship, deliver, cancel, fromCart
 * `Payment` — approve, decline
@@ -143,6 +144,10 @@ Located in `application/port/input/`.
 * FindCategoryUseCase
 * RegisterCustomerUseCase
 * FindCustomerUseCase
+* AddAddressUseCase
+* UpdateAddressUseCase
+* SetDefaultAddressUseCase
+* RemoveAddressUseCase
 * AddToCartUseCase
 * RemoveFromCartUseCase
 * FindCartUseCase
@@ -170,6 +175,7 @@ Key current behaviour:
 * `CartService` builds price/name/SKU snapshots server-side from the product.
 * `ShopOrder.fromCart()` receives payment method explicitly.
 * `CustomerService.registerCustomer()` creates the User and assigns the CUSTOMER role before saving the Customer.
+* `CustomerService` address actions (`addAddress`, `updateAddress`, `setDefaultAddress`, `removeAddress`) are transactional: each loads the customer, applies the rule of the `Customer` aggregate and saves it. The address is looked up only in the customer's own list, so an unknown id and another customer's id both return 404. The created address returned by `addAddress` is the one with the highest id.
 * `ProductService.updateProduct()` loads the existing product and preserves SKU, status and reserved quantity.
 * `ReportService` generates the sales workbook using Apache POI.
 * `PaymentService.processPayment()` is transactional: it validates the order (PENDING, same payment method, no previous payment), takes the amount from the order, approves the payment with a simulated transaction id, calls `order.pay()` and saves an `ORDER_PAID` outbox event.
@@ -200,7 +206,7 @@ Entities include:
 * OutboxEventEntity
 * ProcessedEventEntity
 
-Cart items use `orphanRemoval = true`. Order items do not use orphan removal because they are historical records.
+Cart items and customer addresses use `orphanRemoval = true`. Order items do not use orphan removal because they are historical records. `CustomerEntity.addresses` is ordered by id (`@OrderBy("id ASC")`).
 
 ### Repositories
 
@@ -262,6 +268,7 @@ The four adapters with relevant LAZY graphs reload entities through dedicated `J
 * `UpdateProductRequest`
 * `RegisterCustomerRequest`
 * `CreateAddressRequest`
+* `UpdateAddressRequest`
 * `AddToCartRequest`
 * `CheckoutRequest`
 * `UpdateOrderStatusRequest`
@@ -275,6 +282,7 @@ Important request details:
 * `AddToCartRequest` contains only `productId` and `quantity`; price/name/SKU are populated server-side.
 * `CheckoutRequest` contains `idempotencyKey`, `addressId` and `paymentMethod`. `addressId` must belong to the authenticated customer and is snapshotted onto the order.
 * `RegisterCustomerRequest` contains the password used to create the associated User.
+* `CreateAddressRequest` and `UpdateAddressRequest` carry the same text fields (street, number, optional complement, neighborhood, city, district and postal code in the format `XXXX-XXX`); neither carries the country or the default flag, because the country is always `PT` and the default is decided by the domain.
 * `UpdateOrderStatusRequest` contains `status` and an optional `trackingCode`, which is required when the status is `SHIPPED`.
 
 ### Response DTOs
@@ -322,6 +330,8 @@ Main routes:
 * `/api/v1/payments`
 
 POST /api/v1/payments processes a simulated payment; the order owner (or ADMIN) may call it.
+
+Address routes, owner only: `POST /api/v1/customers/{customerId}/addresses` (201), `PUT .../addresses/{addressId}` (200), `PATCH .../addresses/{addressId}/default` (200) and `DELETE .../addresses/{addressId}` (204). The addresses of a customer are returned by `GET /api/v1/customers/{id}`.
 
 Public routes include registration, authentication, product reads, category reads and API documentation.
 
@@ -446,7 +456,9 @@ Security behaviour:
 * `customerId` ownership checks for customer-scoped routes
 * Order ownership checks for ID/order-number routes
 * ADMIN bypass for order ownership checks
-* Customer-scoped routes (cart routes and `GET /orders/customer/{customerId}`) do not exempt ADMIN
+* `GET /api/v1/customers/{id}` is allowed to the owner and to ADMIN; another customer gets 403 (`SecurityUtils.requireCustomerOrAdminAccess`)
+* Customer-scoped routes (cart routes, address routes and `GET /orders/customer/{customerId}`) do not exempt ADMIN
+* CORS origin read from `app.cors.allowed-origin`, with credentials allowed
 * `401` for unauthenticated requests
 * `403` for authenticated users without permission
 
@@ -465,28 +477,29 @@ Sheets:
 
 ### Unit Tests
 
-Documented domain, service and mapper tests cover:
+Documented domain, service, mapper and consumer tests cover:
 
 * ShopOrder state transitions and cancellation
 * Product stock operations
 * Cart behaviour and totals
-* Customer state changes
+* Customer state changes and address rules
 * Payment behaviour
 * Money, Email and NIF value objects
 * Application service flows
 * DTO/domain mappers
+* Email calls from the order event consumers
 
 ### Persistence Integration Tests
 
 Five flow suites:
 
 * ProductFlowIntegrationTest — 5 tests
-* CustomerFlowIntegrationTest — 5 tests
+* CustomerFlowIntegrationTest — 10 tests
 * CartFlowIntegrationTest — 7 tests
 * OrderFlowIntegrationTest — 9 tests
 * PaymentFlowIntegrationTest — 4 tests
 
-Total persistence integration tests: 30.
+Total persistence integration tests: 35.
 
 Testcontainers provide real MySQL and RabbitMQ infrastructure. The containers use the singleton pattern and are started manually from static fields so JUnit does not stop them between test classes.
 
@@ -519,7 +532,7 @@ The tests also cover customer ownership (cart and per-customer order routes) and
 * Outbox publication and status update
 * Dead-letter routing for permanently failing messages
 
-Messaging tests do not use `@Transactional` because the RabbitMQ consumer uses its own database session. Cleanup is performed explicitly.
+Messaging tests do not use `@Transactional` because the RabbitMQ consumer uses its own database session. Cleanup is performed explicitly. In the test context there is no SMTP server, so email sends can fail; the failure is only logged and does not affect the assertions.
 
 ### Report Tests
 
@@ -527,11 +540,11 @@ Messaging tests do not use `@Transactional` because the RabbitMQ consumer uses i
 
 ### Address-in-Checkout Tests
 
-`OrderServiceTest.shouldThrowWhenAddressDoesNotBelongToCustomer`, `CartControllerTest.shouldRejectCheckoutWithUnknownAddress` (422) and `OrderFlowIntegrationTest.shouldPersistDeliveryAddressSnapshot`. `CartControllerTest.shouldCheckoutCart` now checks the delivery fields in the response.
+`OrderServiceTest.shouldThrowWhenAddressDoesNotBelongToCustomer`, `CartControllerTest.shouldRejectCheckoutWithUnknownAddress` (422) and `OrderFlowIntegrationTest.shouldPersistDeliveryAddressSnapshot`. `CartControllerTest.shouldCheckoutCart` also checks the delivery fields in the response.
 
 ### Payment Tests
 
-`PaymentServiceTest` (5 tests): success with order moved to PAID, order not found, order not PENDING, payment method differing from the order, payment already existing. `PaymentControllerTest` (6 tests): no token (401), payment approved and order PAID, another customer's order (403), second payment (422), different method (422), missing order (404).
+`PaymentServiceTest` (5 tests): success with order moved to PAID and outbox event saved, order not found, order not PENDING, payment method differing from the order, payment already existing. `PaymentControllerTest` (6 tests): no token (401), payment approved and order PAID, another customer's order (403), second payment (422), different method (422), missing order (404).
 
 ### Shipping and Notification Tests
 
@@ -541,14 +554,23 @@ Messaging tests do not use `@Transactional` because the RabbitMQ consumer uses i
 
 `AuthControllerTest` (9 tests, 4 of them new): login sets the `HttpOnly` cookie scoped to `/api/v1/auth` and does not return the refresh token in the body, refresh through the cookie, refresh with an invalid token (401), refresh without the cookie (401), an access token sent to `/refresh` (401), a refresh token sent as `Bearer` (401), logout clearing the cookie (204), plus the existing blank-password (400) and wrong-password (401) cases.
 
+### Customer and Address Tests
+
+`CustomerTest` (12 tests): block and activate, first address becomes the default, a second one does not, adding to a null list, editing (country unchanged), editing an unknown address, changing the default, removing a non-default address, removing the default (the first remaining is promoted), refusing to remove the last address, and removing an unknown address. `CustomerServiceTest` (11 tests, 7 new): add (returns the created address with its id and the default flag), unknown customer, edit, edit unknown address, set default, remove, and refuse to remove the last one. `CustomerFlowIntegrationTest` (10 tests, 5 new): saved addresses with only the first as default, adding to an existing customer, the row of a removed address is deleted, the new default is persisted and edited fields are persisted. `CustomerControllerTest` (19 tests, 10 new for addresses and 2 new for the read rule): owner reads, another customer gets 403, ADMIN reads any customer and gets 404 for a missing one; creating, editing, changing the default and deleting addresses, including the invalid postal code (400), another customer (403), unknown address (404), deleting the last address (422) and no token (401).
+
+### CORS Tests
+
+`CorsIntegrationTest` (3 tests): the preflight of `http://localhost:4200` is allowed with credentials, the preflight of an unknown origin is rejected with 403, and a real request from the frontend origin receives the CORS headers.
+
 ### Full Suite
 
-215 tests, all passing:
+252 tests, all passing:
 
-* Unit — 108: domain 53 (ShopOrder 9, Product 9, Cart 8, Money 8, Email 6, NIF 6, Payment 3, CartItem 2, Customer 2), application services 36 (Order 11, Product 6, Cart 6, Category 4, Customer 4, Payment 5), mappers 9, ReportServiceTest 5, OrderEventConsumersEmailTest 5
+* Unit — 125: domain 63 (ShopOrder 9, Product 9, Cart 8, Money 8, Email 6, NIF 6, Payment 3, CartItem 2, Customer 12), application services 43 (Order 11, Product 6, Cart 6, Category 4, Customer 11, Payment 5), mappers 9, ReportServiceTest 5, OrderEventConsumersEmailTest 5
 * Application context load — 1
-* Persistence integration — 30
-* Controller integration — 69: Order 16, Product 12, Customer 7, Cart 8, Category 6, Report 5, Auth 9, Payment 6
+* Persistence integration — 35
+* Controller integration — 81: Order 16, Product 12, Customer 19, Cart 8, Category 6, Report 5, Auth 9, Payment 6
+* CORS integration — 3
 * Messaging integration — 7
 
 ## 14. Decisions and Final-State Notes
@@ -577,7 +599,11 @@ The following implementation decisions are considered part of the current design
 * Access and refresh tokens carry a `type` claim and cannot be used in place of each other. Before this change a refresh token worked as a `Bearer` access token.
 * Refresh tokens are reissued on every refresh but are not revoked on the server: a stolen refresh token stays valid until it expires or the secret changes. Revocation would need a refresh-token table.
 * `SameSite=Strict` requires the frontend and the API to be served from the same site.
-* `app.jwt.secret` and `app.cookie.secure` in `application.yaml` are development values; production sets `APP_JWT_SECRET` and `APP_COOKIE_SECURE=true`.
+* `app.jwt.secret`, `app.cookie.secure` and `app.cors.allowed-origin` in `application.yaml` are development values; production sets `APP_JWT_SECRET`, `APP_COOKIE_SECURE=true` and `APP_CORS_ALLOWED_ORIGIN`.
+* `GET /api/v1/customers/{id}` is allowed to the owner and to ADMIN. Before this change any authenticated user could read any customer record.
+* Customer addresses are managed through four routes (create, edit, change default, delete), owner only. The first address becomes the default, a customer always keeps at least one address, deleting the default promotes the first remaining one, and the country is always `PT` and not editable.
+* Customer addresses use `orphanRemoval` and are ordered by id, so deleting removes the row and "the first remaining" is stable. Orders keep their own copy of the delivery address, so deleting an address does not affect them.
+* The CORS origin is a single configurable origin, and the default blocks everything except `http://localhost:4200`.
 
 ## 15. In Progress
 

@@ -53,6 +53,7 @@ The core business logic resides in the domain layer and remains independent of S
 - ResourceNotFoundException → HTTP 404
   - ProductNotFoundException
   - CustomerNotFoundException
+  - AddressNotFoundException
   - CartNotFoundException
   - OrderNotFoundException
 
@@ -136,7 +137,7 @@ The dev RabbitMQ keeps its state between restarts. Changing the type of an exist
 - RabbitMQ external
 - SMTP external
 - Configuration through environment variables
-- `APP_JWT_SECRET` and `APP_COOKIE_SECURE=true` must be set: the values in `application.yaml` are development values
+- `APP_JWT_SECRET`, `APP_COOKIE_SECURE=true` and `APP_CORS_ALLOWED_ORIGIN` must be set: the values in `application.yaml` are development values
 
 ## 6. Key Architectural Decisions
 
@@ -147,7 +148,7 @@ Domain aggregates are regular Java classes using Lombok for boilerplate. They ha
 Examples:
 
 - `Product` — reserve, release, activate, deactivate, confirmSale
-- `Customer` — block, activate
+- `Customer` — block, activate, addAddress, updateAddress, makeAddressDefault, removeAddress
 - `Cart` — addItem, removeItem, convert
 - `ShopOrder` — pay, startPreparing, ship, deliver, cancel
 - `Payment` — approve, decline
@@ -172,7 +173,7 @@ Primary keys:
 - `Long` with `GenerationType.IDENTITY` for role, user, category, product, customer and address
 - String UUIDs for cart, cart item, order, order item, payment, outbox event and processed event
 
-Historical order items do not use `orphanRemoval`. Cart items do use `orphanRemoval` because they do not exist outside their cart.
+Historical order items do not use `orphanRemoval`. Cart items and customer addresses do use `orphanRemoval` because they do not exist outside their parent.
 
 ### 6.3 MapStruct Strategy
 
@@ -301,14 +302,16 @@ The access token is returned in the body as `accessToken`. A client that has los
 
 Roles:
 
-- `CUSTOMER` — manage own cart, place and view own orders
+- `CUSTOMER` — manage own cart, own addresses, place and view own orders
 - `ADMIN` — manage products, update order status and access reports
 
 The JWT contains the authenticated user's email, roles and, when a customer record exists, `customerId`.
 
 Customer-scoped routes verify that the path `customerId` matches the authenticated customer's claim. Order routes addressed by order ID or order number verify ownership against the loaded order; admins are allowed to access any order.
 
-Customer-scoped routes (the cart routes and `GET /orders/customer/{customerId}`) do not exempt admins: an admin gets 403 there because the admin token carries no `customerId`.
+Customer-scoped routes (the cart routes, the address routes and `GET /orders/customer/{customerId}`) do not exempt admins: an admin gets 403 there because the admin token carries no `customerId`.
+
+`GET /api/v1/customers/{id}` is the exception in the other direction: it is allowed to the customer who owns the record and to ADMIN (`SecurityUtils.requireCustomerOrAdminAccess`). Another customer gets 403 even when the id does not exist, so a caller cannot find out which customer ids exist. Only an ADMIN reaches the 404.
 
 `POST /api/v1/payments` loads the order named in the request body and verifies ownership with the same order check (ADMIN allowed).
 
@@ -337,9 +340,7 @@ The authentication handler must import Spring Security's `AuthenticationExceptio
 
 ### 6.13 CORS
 
-Allowed origin for the current frontend integration:
-
-- `http://localhost:4200`
+The allowed origin comes from the property `app.cors.allowed-origin`: `http://localhost:4200` in the development `application.yaml` and `APP_CORS_ALLOWED_ORIGIN` in production. When the property is missing the default is `http://localhost:4200`, so a forgotten configuration blocks the frontend instead of opening the API to other origins. Only one origin is accepted.
 
 Credentials are allowed (`allowCredentials(true)`), which the refresh cookie requires, so the allowed origin must stay explicit and never become a wildcard.
 
@@ -351,6 +352,8 @@ Allowed methods:
 - PATCH
 - DELETE
 - OPTIONS
+
+`CorsIntegrationTest` checks the preflight of the frontend origin (allowed, with credentials), the preflight of an unknown origin (403) and the CORS headers of a real request.
 
 ### 6.14 Portugal Localisation
 
@@ -449,6 +452,28 @@ The order event consumers call `EmailNotificationPort` (implemented by `MailEmai
 
 The email is sent after the stock change and after the event id is saved in `processed_event`, inside its own `try/catch`. A failed send is only logged: the message does not fail, does not reach the dead-letter queue, and a retry cannot repeat the stock change. The trade-off is that a failed email is not retried.
 
+### 6.23 Customer Addresses
+
+The address rules live in the `Customer` aggregate (`addAddress`, `updateAddress`, `makeAddressDefault`, `removeAddress`). `CustomerService` loads the customer, applies the rule and saves it:
+
+- the first address of a customer becomes the default automatically; later ones do not
+- the country is always `PT` and cannot be edited; an edit changes street, number, complement, neighborhood, city, district and postal code (format `XXXX-XXX`)
+- the default can be moved to another address of the same customer
+- a customer must keep at least one address, so deleting the last one returns 422
+- deleting the default address promotes the first remaining one
+- an unknown address id, or one that belongs to another customer, returns 404, because the address is looked up only in the authenticated customer's own list
+
+Routes, all customer-scoped with no admin exemption:
+
+- `POST /api/v1/customers/{customerId}/addresses` → 201 with the created address
+- `PUT /api/v1/customers/{customerId}/addresses/{addressId}` → 200
+- `PATCH /api/v1/customers/{customerId}/addresses/{addressId}/default` → 200
+- `DELETE /api/v1/customers/{customerId}/addresses/{addressId}` → 204
+
+There is no route to list addresses: `GET /api/v1/customers/{id}` already returns them, ordered by id.
+
+`CustomerEntity.addresses` uses `orphanRemoval = true`, so a removed address deletes its row, and `@OrderBy("id ASC")`, so the list order is stable and "the first remaining" is well defined. Orders keep their own copy of the delivery address (see 6.7), so deleting an address does not change past orders.
+
 ## 7. RabbitMQ Configuration
 
 ### Exchanges
@@ -504,20 +529,21 @@ The scheduler publishes the full `OutboxEvent` object using the Jackson 3 compat
 
 | Layer                | Type        | Tool                       | Coverage                                                       |
 | -------------------- | ----------- | -------------------------- | -------------------------------------------------------------- |
-| Domain               | Unit        | JUnit 5                    | 53 tests (9 classes)                                           |
-| Application services | Unit        | JUnit 5 + Mockito          | 36 tests (6 classes)                                           |
+| Domain               | Unit        | JUnit 5                    | 63 tests (9 classes)                                           |
+| Application services | Unit        | JUnit 5 + Mockito          | 43 tests (6 classes)                                           |
 | Mappers              | Unit        | JUnit 5                    | 9 tests (5 classes)                                            |
 | Reports              | Unit        | JUnit 5 + Mockito          | ReportServiceTest, 5 tests                                     |
 | Messaging consumers  | Unit        | JUnit 5 + Mockito          | OrderEventConsumersEmailTest, 5 tests                          |
-| Repositories         | Integration | Testcontainers             | 30 tests (5 flow suites)                                       |
-| Controllers          | Integration | Spring Boot Test + MockMvc | 69 tests (8 classes, real JWTs, includes ReportControllerTest) |
+| Repositories         | Integration | Testcontainers             | 35 tests (5 flow suites)                                       |
+| Controllers          | Integration | Spring Boot Test + MockMvc | 81 tests (8 classes, real JWTs, includes ReportControllerTest) |
+| CORS                 | Integration | Spring Boot Test + MockMvc | CorsIntegrationTest, 3 tests                                   |
 | Messaging            | Integration | Testcontainers + RabbitMQ  | MessagingFlowIntegrationTest, 7 tests                          |
 
 Integration tests use real MySQL and RabbitMQ containers. Messaging tests run without `@Transactional` because consumers use a separate database session.
 
 The test suite uses a singleton-container pattern so the same MySQL and RabbitMQ containers remain available across test classes.
 
-Full suite: 215 tests passing (108 unit, 1 application-context load, 30 persistence integration, 69 controller integration, 7 messaging integration).
+Full suite: 252 tests passing (125 unit, 1 application-context load, 35 persistence integration, 81 controller integration, 3 CORS integration, 7 messaging integration).
 
 ## 10. Database Indexes
 

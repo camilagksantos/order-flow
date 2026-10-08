@@ -46,3 +46,5 @@ app:
     refresh-expiration: 604800000
   cookie:
     secure: false
+  cors:
+    allowed-origin: http://localhost:4200

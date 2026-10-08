@@ -30,6 +30,13 @@ public class SecurityUtils {
         requireCustomerAccess(orderCustomerId);
     }
 
+    public static void requireCustomerOrAdminAccess(Long pathCustomerId) {
+        if (isAdmin()) {
+            return;
+        }
+        requireCustomerAccess(pathCustomerId);
+    }
+
     private static boolean isAdmin() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         return authentication != null && authentication.getAuthorities().stream()

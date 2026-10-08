@@ -40,7 +40,8 @@ public class CustomerEntity {
     @Column(nullable = false, length = 20)
     private CustomerStatus status;
 
-    @OneToMany(mappedBy = "customer", fetch = FetchType.LAZY, cascade = CascadeType.ALL)
+    @OneToMany(mappedBy = "customer", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("id ASC")
     private List<AddressEntity> addresses;
 
     @Column(nullable = false, updatable = false)

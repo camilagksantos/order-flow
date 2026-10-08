@@ -1,6 +1,7 @@
 package com.camilagksantos.orderflow.application.mapper;
 
 import com.camilagksantos.orderflow.application.dto.request.CreateAddressRequest;
+import com.camilagksantos.orderflow.application.dto.request.UpdateAddressRequest;
 import com.camilagksantos.orderflow.application.dto.response.AddressResponse;
 import com.camilagksantos.orderflow.domain.customer.Address;
 import org.mapstruct.Mapper;
@@ -16,4 +17,10 @@ public interface AddressMapper {
     @Mapping(target = "country", constant = "PT")
     @Mapping(target = "defaultAddress", constant = "false")
     Address toDomain(CreateAddressRequest request);
+
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "customerId", ignore = true)
+    @Mapping(target = "country", ignore = true)
+    @Mapping(target = "defaultAddress", ignore = true)
+    Address toDomain(UpdateAddressRequest request);
 }
