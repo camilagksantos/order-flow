@@ -162,6 +162,7 @@ Environments are generated with `ng generate environments`:
 
 - Authentication: `POST /api/v1/auth/login`, `/refresh`, `/logout`
 - Registration: `POST /api/v1/customers`
+- Customer: `GET /api/v1/customers/{id}` (own record, with the addresses), `POST /api/v1/customers/{customerId}/addresses`, `PUT .../addresses/{addressId}`, `PATCH .../addresses/{addressId}/default`, `DELETE .../addresses/{addressId}`
 - Catalog: `GET /api/v1/products` and `GET /api/v1/categories` (public)
 - Cart: `GET /api/v1/carts/customer/{customerId}`, `POST .../items`, `DELETE .../items/{itemId}`, `POST .../checkout`
 - Orders: `GET /api/v1/orders/{id}`, `/number/{orderNumber}`, `/customer/{customerId}`, `POST /{id}/cancel`
@@ -175,7 +176,7 @@ Checkout flow:
 
 Error responses are shown according to the backend mapping: 400 validation, 401 session, 403 forbidden, 404 not found, 409 conflict and 422 business rule.
 
-To be confirmed when the corresponding backend controllers are reviewed: product filtering, search and pagination parameters, and the routes for listing and creating customer addresses.
+To be confirmed when the corresponding backend controllers are reviewed: product filtering, search and pagination parameters.
 
 ## 9. Testing Strategy
 

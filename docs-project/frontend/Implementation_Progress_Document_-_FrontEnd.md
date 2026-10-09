@@ -81,4 +81,4 @@ Nothing in progress. Next: step 2, shell and header, theme and startup spinner, 
 1. Color palette and font for the global theme, to be chosen at step 2.
 2. Startup spinner in `index.html`, planned for step 2 with the theme.
 3. The login screen must read the `returnUrl` parameter and send the user back after the login (step 2).
-4. Backend controllers still to be reviewed before the catalog and checkout steps: `ProductController`, `CategoryController` and `CustomerController`, to confirm product filters and the address routes.
+4. Backend controllers still to be reviewed before the catalog step: `ProductController` and `CategoryController`, to confirm product filters.
