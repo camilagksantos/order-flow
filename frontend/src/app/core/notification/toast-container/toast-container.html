@@ -1,0 +1,35 @@
+<section aria-label="Notificações"
+    class="pointer-events-none fixed inset-x-4 top-20 z-50 flex flex-col gap-3 sm:inset-x-auto sm:right-6 sm:w-96">
+    @for (toast of toaster.toasts(); track toast.id) {
+    <div animate.enter="animate-toast-in" animate.leave="animate-toast-out"
+        class="pointer-events-auto flex items-start gap-3 rounded-card border border-l-4 border-line bg-surface p-4 shadow-overlay"
+        [class]="accentClass[toast.kind]" [attr.role]="toast.kind === 'error' ? 'alert' : 'status'"
+        (mouseenter)="toaster.pause(toast.id)" (mouseleave)="toaster.resume(toast.id)"
+        (focusin)="toaster.pause(toast.id)" (focusout)="toaster.resume(toast.id)">
+        <svg class="mt-0.5 size-5 shrink-0" [class]="iconClass[toast.kind]" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            @switch (toast.kind) {
+            @case ('success') {
+            <path d="m8.5 12.5 2.5 2.5 4.5-5" />
+            }
+            @case ('error') {
+            <path d="M12 8v5M12 16.5h.01" />
+            }
+            @default {
+            <path d="M12 11v5M12 7.5h.01" />
+            }
+            }
+        </svg>
+        <p class="flex-1 text-sm leading-relaxed text-ink">{{ toast.message }}</p>
+        <button type="button" aria-label="Fechar notificação"
+            class="-m-1 shrink-0 rounded-control p-1 text-ink-soft transition duration-300 ease-soft hover:bg-soft hover:text-ink focus-visible:outline-2 focus-visible:outline-wine-600"
+            (click)="toaster.dismiss(toast.id)">
+            <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+        </button>
+    </div>
+    }
+</section>
