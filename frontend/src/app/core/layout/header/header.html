@@ -1,0 +1,19 @@
+<header class="fixed inset-x-0 top-0 z-40 border-b border-line bg-white/85 shadow-soft backdrop-blur-md">
+    <div class="mx-auto grid h-16 max-w-6xl grid-cols-[1fr_auto_1fr] items-center px-2 sm:px-4">
+        <div class="flex justify-start">
+                <app-header-menu-button [open]="menuOpen()" (toggled)="menuToggle.emit()" />
+        </div>
+
+        <app-header-brand />
+
+        <div class="flex items-center justify-end gap-1">
+                <app-header-search-button [open]="searchOpen()" (toggled)="toggleSearch()" />
+                <app-header-cart />
+        </div>
+    </div>
+</header>
+
+@if (searchOpen()) {
+<app-header-search-panel animate.enter="animate-panel-in" animate.leave="animate-panel-out"
+    class="fixed inset-x-0 top-16 z-30 block px-4 pt-3" (closed)="searchOpen.set(false)" />
+}

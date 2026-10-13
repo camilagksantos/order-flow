@@ -1,0 +1,15 @@
+<div class="mt-2 border-t border-line pt-2">
+    @if (auth.isAuthenticated()) {
+    <button type="button"
+        class="block w-full rounded-control px-3 py-3 text-left text-base text-ink transition duration-300 ease-soft hover:bg-soft focus-visible:outline-2 focus-visible:outline-wine-600"
+        (click)="signOut()">
+        Sair
+    </button>
+    } @else {
+    <a routerLink="/login"
+        class="block rounded-control px-3 py-3 text-base text-wine-600 transition duration-300 ease-soft hover:bg-soft focus-visible:outline-2 focus-visible:outline-wine-600"
+        (click)="chosen.emit()">
+        Entrar
+    </a>
+    }
+</div>

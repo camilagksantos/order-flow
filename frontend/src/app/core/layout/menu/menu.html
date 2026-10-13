@@ -1,0 +1,12 @@
+@if (open()) {
+<div animate.enter="animate-fade-in" animate.leave="animate-fade-out"
+    class="fixed inset-x-0 bottom-0 top-16 z-30 bg-chocolate-800/25" aria-hidden="true" (click)="closed.emit()"></div>
+<div #panel id="main-menu" animate.enter="animate-panel-in" animate.leave="animate-panel-out"
+    class="fixed inset-x-0 top-16 z-30 px-4 pt-3 sm:inset-x-auto sm:left-4 sm:w-88 sm:px-0">
+    <div
+        class="max-h-[calc(100dvh-5rem)] overflow-y-auto rounded-card border border-line bg-surface p-3 shadow-overlay">
+        <app-menu-links (navigated)="closed.emit()" />
+        <app-menu-session (chosen)="closed.emit()" />
+    </div>
+</div>
+}
