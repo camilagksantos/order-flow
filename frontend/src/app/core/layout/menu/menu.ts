@@ -1,9 +1,10 @@
 import { Component, ElementRef, effect, input, output, viewChild } from '@angular/core';
 import { MenuLinks } from './menu-links/menu-links';
 import { MenuSession } from './menu-session/menu-session';
+import { MenuGreeting } from './menu-greeting/menu-greeting';
 
 @Component({
-  imports: [MenuLinks, MenuSession],
+  imports: [MenuGreeting, MenuLinks, MenuSession],
   selector: 'app-menu',
   templateUrl: './menu.html',
   host: { '(document:keydown.escape)': 'onEscape()' },

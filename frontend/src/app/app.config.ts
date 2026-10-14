@@ -4,12 +4,16 @@ import { provideRouter } from '@angular/router';
 import { routes } from './app.routes';
 import { authInterceptor } from './core/auth/interceptor/auth-interceptor';
 import { AuthStore } from './core/auth/auth.store';
+import { CustomerStore } from './core/customer/customer.store';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
     provideHttpClient(withInterceptors([authInterceptor])),
-    provideAppInitializer(() => inject(AuthStore).restoreSession())
+    provideAppInitializer(() => inject(AuthStore).restoreSession()),
+    provideAppInitializer(() => {
+      inject(CustomerStore);
+    })
   ]
 };

@@ -1,0 +1,16 @@
+<div class="px-3 pb-3 pt-2">
+    @switch (view()) {
+    @case ('loading') {
+    <div class="h-7 w-40 animate-pulse rounded-control bg-soft" role="status" aria-label="A carregar o nome"></div>
+    }
+    @case ('named') {
+    <p class="font-display text-2xl text-wine-600">Olá, {{ firstName() }}</p>
+    }
+    @case ('generic') {
+    <p class="font-display text-2xl text-wine-600">Olá!</p>
+    }
+    @default {
+    <p class="font-display text-2xl text-wine-600">Olá, visitante</p>
+    }
+    }
+</div>

@@ -4,6 +4,7 @@ import { provideRouter } from '@angular/router';
 import { vi } from 'vitest';
 import { AuthStore } from '../../auth/auth.store';
 import { Menu } from './menu';
+import { CustomerStore } from '../../customer/customer.store';
 
 describe('Menu', () => {
   let component: Menu;
@@ -29,7 +30,8 @@ describe('Menu', () => {
       imports: [Menu],
       providers: [
         provideRouter([{ path: 'products', children: [] }]),
-        { provide: AuthStore, useValue: { isAuthenticated: signal(false) } },
+        { provide: AuthStore, useValue: { isAuthenticated: signal(false), customerId: signal(null) } },
+        { provide: CustomerStore, useValue: { status: signal('idle'), firstName: signal(null) } },
       ],
     }).compileComponents();
 
