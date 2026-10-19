@@ -1,0 +1,6 @@
+<app-header [menuOpen]="menuOpen()" (menuToggle)="menuOpen.set(!menuOpen())" />
+<app-menu [open]="menuOpen()" (closed)="menuOpen.set(false)" />
+<main class="mx-auto max-w-6xl px-4 pb-16 pt-24 sm:px-6">
+    <router-outlet />
+</main>
+<app-toast-container />
